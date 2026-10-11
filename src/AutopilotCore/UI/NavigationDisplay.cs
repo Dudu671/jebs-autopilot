@@ -333,20 +333,32 @@ namespace AutopilotCore
 
         private static void DrawHeadingBug(Canvas2D c, FlightData d, float rot)
         {
-            if (!d.HasHeadingTarget)
+            float bearing;
+            bool selected;
+            if (d.HasNavTrack)
+            {
+                bearing = d.NavTrack;
+                selected = true;
+            }
+            else if (d.HasHeadingTarget)
+            {
+                bearing = d.HeadingTarget;
+                selected = d.HeadingOn;
+            }
+            else
             {
                 return;
             }
 
-            float a = d.HeadingTarget + rot;
+            float a = bearing + rot;
             Color color = Magenta;
-            color.a = d.HeadingOn ? 1f : 0.45f;
+            color.a = selected ? 1f : 0.45f;
             c.FillTriangle(
                 Canvas2D.Polar(AircraftPos, RingRadius + 6f, a - 3f),
                 Canvas2D.Polar(AircraftPos, RingRadius + 6f, a + 3f),
                 Canvas2D.Polar(AircraftPos, RingRadius - 8f, a),
                 color);
-            if (d.HeadingOn)
+            if (selected)
             {
                 c.DashedLine(AircraftPos, Canvas2D.Polar(AircraftPos, RingRadius - 8f, a), 1.5f, 6f, 6f, color);
             }

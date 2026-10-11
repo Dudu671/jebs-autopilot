@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace AutopilotCore
@@ -64,9 +65,22 @@ namespace AutopilotCore
             return new Vector2((float)Vector3d.Dot(vel, vessel.east), (float)Vector3d.Dot(vel, vessel.north));
         }
 
+        // Velocity relative to the air mass. Stock KSP has no wind, so this matches surface velocity.
+        public static Vector3d GetAirVelocity(this Vessel vessel)
+        {
+            return vessel.GetSrfVelocity() - Atmosphere.WindWorld(vessel);
+        }
+
+        // Horizontal wind in m/s, x = east, y = north. The vector points where the air is moving.
+        public static Vector2 GetWindHorizontal(this Vessel vessel)
+        {
+            Vector3d wind = Atmosphere.WindWorld(vessel);
+            return new Vector2((float)Vector3d.Dot(wind, vessel.east), (float)Vector3d.Dot(wind, vessel.north));
+        }
+
         public static void GetFlightPathOffsets(this Vessel vessel, out float up, out float right)
         {
-            // TODO: validate in flight
+            // Flight path is over the ground. Angle of attack and sideslip use the air vector.
             Vector3d vel = vessel.GetSrfVelocity();
             Transform t = vessel.ReferenceTransform;
             double forward = Vector3d.Dot(vel, t.up);
@@ -77,14 +91,29 @@ namespace AutopilotCore
                 return;
             }
 
-            const double toDeg = 180.0 / System.Math.PI;
-            up = (float)(System.Math.Atan2(Vector3d.Dot(vel, -t.forward), forward) * toDeg);
-            right = (float)(System.Math.Atan2(Vector3d.Dot(vel, t.right), forward) * toDeg);
+            const double toDeg = 180.0 / Math.PI;
+            up = (float)(Math.Atan2(Vector3d.Dot(vel, -t.forward), forward) * toDeg);
+            right = (float)(Math.Atan2(Vector3d.Dot(vel, t.right), forward) * toDeg);
+        }
+
+        // Positive when the air-relative velocity is right of the nose.
+        public static float GetCoordinationYaw(this Vessel vessel)
+        {
+            Vector3d air = vessel.GetAirVelocity();
+            Transform t = vessel.ReferenceTransform;
+            double forward = Vector3d.Dot(air, t.up);
+            if (air.sqrMagnitude < 1.0 || forward < 0.1)
+            {
+                return 0f;
+            }
+
+            float beta = (float)(Math.Atan2(Vector3d.Dot(air, t.right), forward) * (180.0 / Math.PI));
+            return Mathf.Clamp(0.02f * beta, -0.35f, 0.35f);
         }
 
         public static float GetOatC(this Vessel vessel)
         {
-            return (float)(vessel.atmosphericTemperature - 273.15);
+            return Atmosphere.TemperatureK(vessel) - 273.15f;
         }
 
         public static float GetAltitudeASL(this Vessel vessel)
@@ -106,14 +135,19 @@ namespace AutopilotCore
 
         public static float GetIasKt(this Vessel vessel)
         {
-            // TODO: validate in flight
-            return (float)vessel.indicatedAirSpeed * Units.KnotsPerMps;
+            return (float)CalibratedAirspeed(vessel) * Units.KnotsPerMps;
         }
 
         public static float GetTasKt(this Vessel vessel)
         {
-            // TODO: validate in flight
-            return (float)vessel.srfSpeed * Units.KnotsPerMps;
+            return (float)vessel.GetAirVelocity().magnitude * Units.KnotsPerMps;
+        }
+
+        public static float GetMach(this Vessel vessel)
+        {
+            double temperature = Math.Max(Atmosphere.TemperatureK(vessel), 1.0);
+            double speedOfSound = Math.Sqrt(1.4 * 287.05 * temperature);
+            return (float)(vessel.GetAirVelocity().magnitude / speedOfSound);
         }
 
         public static float GetGsKt(this Vessel vessel)
@@ -125,14 +159,38 @@ namespace AutopilotCore
         public static float GetAoA(this Vessel vessel)
         {
             // TODO: validate in flight
-            Vector3d vel = vessel.GetSrfVelocity();
+            Vector3d vel = vessel.GetAirVelocity();
             if (vel.sqrMagnitude < 1e-4)
             {
                 return 0f;
             }
 
             Vector3d local = vessel.ReferenceTransform.InverseTransformDirection(vel);
-            return (float)(System.Math.Atan2(-local.z, local.y) * (180.0 / System.Math.PI));
+            return (float)(Math.Atan2(-local.z, local.y) * (180.0 / Math.PI));
+        }
+
+        // Subsonic pitot conversion so indicated airspeed follows the air mass, not the ground.
+        private static double CalibratedAirspeed(Vessel vessel)
+        {
+            double tas = vessel.GetAirVelocity().magnitude;
+            double pressure = Atmosphere.PressurePa(vessel);
+            double temperature = Atmosphere.TemperatureK(vessel);
+            if (tas < 0.1 || pressure < 1.0 || temperature < 1.0)
+            {
+                return 0.0;
+            }
+
+            double mach = tas / Math.Sqrt(1.4 * 287.05 * temperature);
+            double impact = pressure * (Math.Pow(1.0 + (0.2 * mach * mach), 3.5) - 1.0);
+            const double seaLevelPressure = 101325.0;
+            const double seaLevelSoundSpeed = 340.294;
+            double term = Math.Pow((impact / seaLevelPressure) + 1.0, 2.0 / 7.0) - 1.0;
+            if (term <= 0.0)
+            {
+                return 0.0;
+            }
+
+            return seaLevelSoundSpeed * Math.Sqrt(5.0 * term);
         }
     }
 }

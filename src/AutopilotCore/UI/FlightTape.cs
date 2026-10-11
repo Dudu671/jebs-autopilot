@@ -21,7 +21,9 @@ namespace AutopilotCore
             DrawRow("GS", vessel.GetGsKt().ToString("F0") + " kt",
                 "AoA", vessel.GetAoA().ToString("F1") + " deg");
             DrawRow("HDG", vessel.GetHeading().ToString("F0") + " deg",
-                "BANK", Signed(vessel.GetBank(), "F0") + " deg");
+                "TRK", vessel.GetTrack().ToString("F0") + " deg");
+            DrawRow("BANK", Signed(vessel.GetBank(), "F0") + " deg",
+                "WND", WindText(vessel));
             GUILayout.EndVertical();
         }
 
@@ -37,6 +39,19 @@ namespace AutopilotCore
             }
 
             GUILayout.EndHorizontal();
+        }
+
+        private static string WindText(Vessel vessel)
+        {
+            Vector2 wind = vessel.GetWindHorizontal();
+            float knots = wind.magnitude * Units.KnotsPerMps;
+            if (knots < 1f)
+            {
+                return "calm";
+            }
+
+            float from = Mathf.Repeat(Mathf.Atan2(-wind.x, -wind.y) * Mathf.Rad2Deg, 360f);
+            return Format.Heading(from) + " / " + knots.ToString("F0") + " kt";
         }
 
         private static string Signed(float value, string format)

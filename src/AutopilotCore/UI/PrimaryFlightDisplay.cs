@@ -322,10 +322,23 @@ namespace AutopilotCore
                 c.Line(t + new Vector2(-6f, 0f), t + new Vector2(0f, -6f), 2f, Green);
             }
 
-            if (d.HasHeadingTarget)
+            float bugBearing = 0f;
+            bool showBug = false;
+            if (d.HasNavTrack)
             {
-                float bx = Mathf.Clamp(cx + (Mathf.DeltaAngle(hdg, d.HeadingTarget) * PxPerHdgDeg), r.xMin + 8f, r.xMax - 8f);
-                Color color = ModeColor(Magenta, d.HeadingOn);
+                bugBearing = d.NavTrack;
+                showBug = true;
+            }
+            else if (d.HasHeadingTarget)
+            {
+                bugBearing = d.HeadingTarget;
+                showBug = true;
+            }
+
+            if (showBug)
+            {
+                float bx = Mathf.Clamp(cx + (Mathf.DeltaAngle(hdg, bugBearing) * PxPerHdgDeg), r.xMin + 8f, r.xMax - 8f);
+                Color color = ModeColor(Magenta, d.HasNavTrack || d.HeadingOn);
                 c.FillRect(new Rect(bx - 8f, r.yMin, 5f, 6f), color);
                 c.FillRect(new Rect(bx + 3f, r.yMin, 5f, 6f), color);
                 c.FillRect(new Rect(bx - 8f, r.yMin, 16f, 2f), color);

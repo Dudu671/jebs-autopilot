@@ -37,6 +37,8 @@ namespace AutopilotCore
         public float PitchTarget;
         public bool NavOn;
         public string NavLabel;
+        public bool HasNavTrack;
+        public float NavTrack;
 
         private bool _hasLastIas;
         private float _lastIas;
@@ -64,7 +66,7 @@ namespace AutopilotCore
             IasKt = vessel.GetIasKt();
             TasKt = vessel.GetTasKt();
             GsKt = vessel.GetGsKt();
-            Mach = (float)vessel.mach;
+            Mach = vessel.GetMach();
             AltFt = vessel.GetAltitudeAslFt();
             VsFpm = vessel.GetVerticalSpeedFpm();
             OatC = vessel.GetOatC();
@@ -100,6 +102,9 @@ namespace AutopilotCore
             NavHold nav = modules.Find<NavHold>();
             NavOn = nav != null && nav.Enabled;
             NavLabel = nav != null ? nav.ActiveLabel : "";
+            float navTrack = 0f;
+            HasNavTrack = nav != null && nav.TryGetDesiredTrack(out navTrack);
+            NavTrack = navTrack;
         }
     }
 }

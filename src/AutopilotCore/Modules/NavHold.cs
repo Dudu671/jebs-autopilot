@@ -3,9 +3,8 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
-    // Follows the waypoint legs with L1 guidance: aim at a point L1 meters ahead on the leg and
-    // command the bank for the lateral acceleration that reaches it. Commanding bank directly
-    // avoids stacking a cross-track loop on the heading loop, which made the aircraft weave.
+    // Follows the waypoint legs by ground track. A point L1 meters ahead on the leg sets the
+    // desired track, and the heading command is that track minus the crosswind crab angle.
     public sealed class NavHold : ILateralMode
     {
         private const float L1Period = 25f;
@@ -20,7 +19,7 @@ namespace AutopilotCore
         private readonly BankController _bank = new BankController();
         private readonly FlightRecorder _recorder = new FlightRecorder(
             "nav_hold.csv",
-            "t,dist_m,xtrack_m,leg_course,track,nu1,nu2,l1_m,bank_target,bank,gs_mps");
+            "t,dist_m,xtrack_m,desired_trk,track,hdg_cmd,hdg,crab,l1_m,bank,gs_mps");
         private readonly NavPlan _plan = new NavPlan();
         private int _maxBankIndex = 4;
 
@@ -50,6 +49,13 @@ namespace AutopilotCore
         public string ActiveLabel
         {
             get { return _plan.HasActive ? "WP" + (_plan.ActiveIndex + 1) : "END"; }
+        }
+
+        // Ground track the guidance is chasing, available only while engaged on the active waypoint.
+        public bool TryGetDesiredTrack(out float track)
+        {
+            track = _desiredCourse;
+            return _active && _plan.HasActive;
         }
 
         // Start of the leg being tracked, available only while engaged on the active waypoint.
@@ -86,10 +92,11 @@ namespace AutopilotCore
                 _recorder.Start();
             }
 
+            ctrl.yaw = vessel.GetCoordinationYaw();
             if (_plan.HasActive && groundVel.magnitude > MinGuidanceSpeed)
             {
-                float bankTarget = GuideToActive(vessel, groundVel, maxBank, engaging);
-                ctrl.roll = _bank.StepBank(vessel, bankTarget, maxBank, dt);
+                float headingTarget = GuideToActive(vessel, groundVel, maxBank, engaging);
+                ctrl.roll = _bank.Step(vessel, vessel.GetHeading(), headingTarget, maxBank, dt);
                 return;
             }
 
@@ -108,12 +115,12 @@ namespace AutopilotCore
             }
             else if (!_plan.HasActive)
             {
-                GUILayout.Label("Plan complete, holding " + Format.Heading(_holdCourse));
+                GUILayout.Label("Plan complete, holding TRK " + Format.Heading(_holdCourse));
             }
             else if (Enabled)
             {
                 GUILayout.Label("To " + NavPlan.NameOf(_plan.ActiveIndex) + "   " + (_distanceM / 1000f).ToString("F1") +
-                                " km   CRS " + Format.Heading(_desiredCourse));
+                                " km   TRK " + Format.Heading(_desiredCourse));
             }
             else
             {
@@ -123,6 +130,7 @@ namespace AutopilotCore
             _maxBankIndex = BankController.DrawMaxBankSlider(_maxBankIndex);
         }
 
+        // Heading to fly so the ground track converges on the leg.
         private float GuideToActive(Vessel vessel, Vector2 groundVel, float maxBank, bool engaging)
         {
             double radius = vessel.mainBody.Radius;
@@ -131,7 +139,8 @@ namespace AutopilotCore
             Waypoint wp = _plan.Active;
             UpdateLegStart(lat, lon, wp, engaging);
 
-            float speed = groundVel.magnitude;
+            float groundSpeed = groundVel.magnitude;
+            float airSpeed = Mathf.Max(HorizontalAirspeed(vessel), groundSpeed);
             _distanceM = (float)NavMath.Distance(radius, lat, lon, wp.Latitude, wp.Longitude);
             float crossTrack = (float)NavMath.CrossTrack(radius, _fromLat, _fromLon, wp.Latitude, wp.Longitude, lat, lon);
 
@@ -142,7 +151,7 @@ namespace AutopilotCore
                 : bearingToWp;
             _desiredCourse = legCourse;
 
-            if (DistanceToGo(radius, lat, lon, wp) < CaptureDistance(wp, speed, maxBank))
+            if (DistanceToGo(radius, lat, lon, wp) < CaptureDistance(wp, airSpeed, maxBank))
             {
                 _plan.Advance();
             }
@@ -155,23 +164,34 @@ namespace AutopilotCore
             // than max bank and the command saturates left and right in a limit cycle.
             float gain = 4f * L1Damping * L1Damping;
             float maxLateralAccel = Gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad);
-            float l1ForBank = gain * speed * speed * Mathf.Sin(LinearEta) / maxLateralAccel;
-            float l1 = Mathf.Max(MinL1, Mathf.Max(L1Damping * L1Period * speed / Mathf.PI, l1ForBank));
+            float l1ForBank = gain * airSpeed * airSpeed * Mathf.Sin(LinearEta) / maxLateralAccel;
+            float l1 = Mathf.Max(MinL1, Mathf.Max(L1Damping * L1Period * groundSpeed / Mathf.PI, l1ForBank));
+            float offset = Mathf.Clamp(crossTrack, -0.9f * l1, 0.9f * l1);
+            float ahead = Mathf.Sqrt((l1 * l1) - (offset * offset));
+            Vector2 toPoint = (along * ahead) - (right * offset);
+            float desiredTrack = Mathf.Repeat(Mathf.Atan2(toPoint.x, toPoint.y) * Mathf.Rad2Deg, 360f);
+            _desiredCourse = desiredTrack;
 
-            float nu1 = Mathf.Asin(Mathf.Clamp(crossTrack / l1, -0.7071f, 0.7071f));
-            float nu2 = Mathf.Atan2(Vector2.Dot(groundVel, right), Vector2.Dot(groundVel, along));
-            float eta = Mathf.Clamp(-(nu1 + nu2), -Mathf.PI * 0.5f, Mathf.PI * 0.5f);
-
-            float lateralAccel = gain * speed * speed / l1 * Mathf.Sin(eta);
-            float bankTarget = Mathf.Atan(lateralAccel / Gravity) * Mathf.Rad2Deg;
+            float trackRad = desiredTrack * Mathf.Deg2Rad;
+            Vector2 trackRight = new Vector2(Mathf.Cos(trackRad), -Mathf.Sin(trackRad));
+            float windRight = Vector2.Dot(vessel.GetWindHorizontal(), trackRight);
+            float crab = Mathf.Asin(Mathf.Clamp(windRight / Mathf.Max(airSpeed, 1f), -0.85f, 0.85f)) * Mathf.Rad2Deg;
+            float headingTarget = Mathf.Repeat(desiredTrack - crab, 360f);
 
             if (_recorder.Tick(Time.fixedDeltaTime))
             {
-                _recorder.Record(_distanceM, crossTrack, legCourse, vessel.GetTrack(), nu1 * Mathf.Rad2Deg,
-                    nu2 * Mathf.Rad2Deg, l1, bankTarget, vessel.GetBank(), speed);
+                _recorder.Record(_distanceM, crossTrack, desiredTrack, vessel.GetTrack(), headingTarget,
+                    vessel.GetHeading(), crab, l1, vessel.GetBank(), groundSpeed);
             }
 
-            return bankTarget;
+            return headingTarget;
+        }
+
+        private static float HorizontalAirspeed(Vessel vessel)
+        {
+            Vector3d air = vessel.GetAirVelocity();
+            Vector2 horizontal = new Vector2((float)Vector3d.Dot(air, vessel.east), (float)Vector3d.Dot(air, vessel.north));
+            return horizontal.magnitude;
         }
 
         private void UpdateLegStart(double lat, double lon, Waypoint wp, bool engaging)

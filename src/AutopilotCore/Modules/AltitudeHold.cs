@@ -65,8 +65,8 @@ namespace AutopilotCore
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
             float pitch = vessel.GetPitch();
             float vs = vessel.GetVerticalSpeedFpm();
-            float tasMps = Mathf.Max((float)vessel.srfSpeed, 30f);
-            float fpa = FlightPathAngle(vs, tasMps);
+            float groundSpeed = Mathf.Max(vessel.GetGroundVelocity().magnitude, 30f);
+            float fpa = FlightPathAngle(vs, groundSpeed);
 
             if (!_active)
             {
@@ -80,7 +80,7 @@ namespace AutopilotCore
             _fpaRate = Filter.Blend(_fpaRate, (fpa - _lastFpa) / dt, dt, 0.4f);
             _lastFpa = fpa;
 
-            float fpaCmd = FlightPathAngle(_vsCmd, tasMps);
+            float fpaCmd = FlightPathAngle(_vsCmd, groundSpeed);
             float fpaError = fpaCmd - fpa;
             Adapt(fpaError, dt);
 

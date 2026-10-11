@@ -31,6 +31,7 @@ namespace AutopilotCore
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
             float maxBank = BankController.MaxBankOptions[_maxBankIndex];
             ctrl.roll = _bank.Step(vessel, vessel.GetHeading(), _target.Value, maxBank, dt);
+            ctrl.yaw = vessel.GetCoordinationYaw();
         }
 
         public void DrawGui()
