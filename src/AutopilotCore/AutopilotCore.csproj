@@ -4,13 +4,13 @@
     <RootNamespace>AutopilotCore</RootNamespace>
   </PropertyGroup>
 
-  <!-- Core NÃO vai para Plugins/: o Host carrega esta DLL em runtime a partir de Dev/. -->
+  <!-- Core must not go to Plugins/: the Host loads this DLL at runtime from Dev/. -->
   <Target Name="CopyCoreToKspDev" AfterTargets="Build">
     <PropertyGroup>
       <KspDevDir>$(KSPDir)\GameData\MyAutopilot\Dev</KspDevDir>
     </PropertyGroup>
     <MakeDir Directories="$(KspDevDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspDevDir)" SkipUnchangedFiles="false" />
-    <Message Importance="high" Text="AutopilotCore copiado para $(KspDevDir)" />
+    <Message Importance="high" Text="AutopilotCore copied to $(KspDevDir)" />
   </Target>
 </Project>

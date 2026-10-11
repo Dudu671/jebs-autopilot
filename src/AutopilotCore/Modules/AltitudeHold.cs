@@ -36,7 +36,7 @@ namespace AutopilotCore
         public void DrawGui()
         {
             Enabled = GUILayout.Toggle(Enabled, Name);
-            GUILayout.Label("Alvo ASL (m): " + _target.ToString("F0"));
+            GUILayout.Label("Target ASL (m): " + _target.ToString("F0"));
             _target = GUILayout.HorizontalSlider(_target, 0f, 25000f);
         }
     }

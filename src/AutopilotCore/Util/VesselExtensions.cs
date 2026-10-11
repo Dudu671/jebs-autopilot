@@ -6,7 +6,7 @@ namespace AutopilotCore
     {
         public static float GetPitch(this Vessel vessel)
         {
-            // TODO: validar em voo
+            // TODO: validate in flight
             Vector3d forward = vessel.ReferenceTransform.up;
             Vector3d up = vessel.upAxis;
             return (float)(90.0 - Vector3d.Angle(forward, up));
@@ -14,7 +14,7 @@ namespace AutopilotCore
 
         public static float GetHeading(this Vessel vessel)
         {
-            // TODO: validar em voo
+            // TODO: validate in flight
             Vector3d up = vessel.upAxis;
             Vector3d north = vessel.north;
             Vector3d east = vessel.east;
@@ -36,7 +36,7 @@ namespace AutopilotCore
 
         public static float GetAltitudeASL(this Vessel vessel)
         {
-            // TODO: validar em voo
+            // TODO: validate in flight
             return (float)vessel.altitude;
         }
     }

@@ -1,0 +1,16 @@
+---
+description: Language and comment style for this KSP autopilot plugin
+alwaysApply: true
+---
+
+# Language
+
+- Write all source code in English: identifiers, strings, logs, build messages, and comments.
+- In-game UI is English (IMGUI labels, buttons, window titles).
+- Keep `README.md` in Portuguese unless asked otherwise.
+
+# Comments
+
+- Comment only when the reason is not obvious from the code.
+- Keep comments short. Do not narrate what the next line does.
+- Prefer no comment over a redundant one.

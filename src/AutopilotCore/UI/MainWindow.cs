@@ -24,7 +24,7 @@ namespace AutopilotCore
             _modules.DrawAllGui();
 
             GUILayout.Space(8f);
-            if (GUILayout.Button("Desligar todos"))
+            if (GUILayout.Button("Disable all"))
             {
                 _modules.DisableAll();
             }

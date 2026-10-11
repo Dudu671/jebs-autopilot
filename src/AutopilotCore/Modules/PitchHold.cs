@@ -41,7 +41,7 @@ namespace AutopilotCore
         public void DrawGui()
         {
             Enabled = GUILayout.Toggle(Enabled, Name);
-            GUILayout.Label("Alvo (graus): " + _target.ToString("F1"));
+            GUILayout.Label("Target (deg): " + _target.ToString("F1"));
             _target = GUILayout.HorizontalSlider(_target, -90f, 90f);
         }
     }

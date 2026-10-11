@@ -4,13 +4,11 @@ Plugin de piloto automático com **hot reload**: o KSP carrega só o Host; a ló
 
 ## Ajustar `KSPDir`
 
-Em `Directory.Build.props`, defina `KSPDir` para a pasta de instalação do KSP (a que contém `KSP_x64.exe`), por exemplo:
+`Directory.Build.props` já aponta para a instalação Steam local:
 
-```xml
-<KSPDir>C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KSPDir>
-```
+`C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program`
 
-O build falha com mensagem clara se esse caminho não existir. Dá para sobrescrever na linha de comando:
+Mude `KSPDir` se o jogo estiver em outro disco. O build falha com mensagem clara se esse caminho não existir. Dá para sobrescrever na linha de comando:
 
 ```bat
 dotnet build /p:KSPDir="C:\caminho\do\KSP"

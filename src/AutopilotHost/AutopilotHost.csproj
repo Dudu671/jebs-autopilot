@@ -10,6 +10,6 @@
     </PropertyGroup>
     <MakeDir Directories="$(KspPluginsDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspPluginsDir)" SkipUnchangedFiles="false" />
-    <Message Importance="high" Text="AutopilotHost copiado para $(KspPluginsDir)" />
+    <Message Importance="high" Text="AutopilotHost copied to $(KspPluginsDir)" />
   </Target>
 </Project>

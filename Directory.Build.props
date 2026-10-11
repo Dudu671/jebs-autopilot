@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
-    <!-- Ajuste este caminho para a pasta de instalação do KSP 1.12.x -->
-    <KSPDir Condition="'$(KSPDir)' == ''">C:\Path\To\Kerbal Space Program</KSPDir>
+    <!-- Local Steam install. Change this if KSP lives on another drive. -->
+    <KSPDir Condition="'$(KSPDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KSPDir>
     <KSPManaged>$(KSPDir)\KSP_x64_Data\Managed</KSPManaged>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>7.3</LangVersion>
@@ -31,8 +31,8 @@
 
   <Target Name="EnsureKspDir" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(KSPDir)')"
-           Text="KSPDir não existe: '$(KSPDir)'. Edite Directory.Build.props (propriedade KSPDir) e aponte para a pasta de instalação do KSP 1.12.x." />
+           Text="KSPDir does not exist: '$(KSPDir)'. Set KSPDir in Directory.Build.props to your KSP 1.12.x install folder." />
     <Error Condition="!Exists('$(KSPManaged)\Assembly-CSharp.dll')"
-           Text="Não achei Assembly-CSharp.dll em '$(KSPManaged)'. Confira se KSPDir aponta para a raiz do KSP (a pasta que contém KSP_x64.exe)." />
+           Text="Assembly-CSharp.dll not found in '$(KSPManaged)'. KSPDir must be the KSP root (the folder that contains KSP_x64.exe)." />
   </Target>
 </Project>

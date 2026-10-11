@@ -29,7 +29,7 @@ namespace AutopilotHost
             string dir = Path.GetDirectoryName(_dllPath);
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
             {
-                Debug.LogError("[AutopilotHost] Pasta Dev não encontrada: " + dir);
+                Debug.LogError("[AutopilotHost] Dev folder not found: " + dir);
                 return;
             }
 
@@ -80,7 +80,7 @@ namespace AutopilotHost
 
                 if (!File.Exists(_dllPath))
                 {
-                    Debug.LogError("[AutopilotHost] AutopilotCore.dll não encontrada: " + _dllPath);
+                    Debug.LogError("[AutopilotHost] AutopilotCore.dll not found: " + _dllPath);
                     return;
                 }
 
@@ -88,17 +88,17 @@ namespace AutopilotHost
                 Type controllerType = assembly.GetType(CoreTypeName);
                 if (controllerType == null)
                 {
-                    Debug.LogError("[AutopilotHost] Tipo " + CoreTypeName + " não encontrado na DLL.");
+                    Debug.LogError("[AutopilotHost] Type " + CoreTypeName + " not found in DLL.");
                     return;
                 }
 
                 _coreObject = new GameObject(CoreTypeName);
                 _coreObject.AddComponent(controllerType);
-                Debug.Log("[AutopilotHost] Core recarregado.");
+                Debug.Log("[AutopilotHost] Core reloaded.");
             }
             catch (Exception ex)
             {
-                Debug.LogError("[AutopilotHost] Falha no reload: " + ex);
+                Debug.LogError("[AutopilotHost] Reload failed: " + ex);
             }
         }
 
