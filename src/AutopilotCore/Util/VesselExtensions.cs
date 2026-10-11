@@ -44,6 +44,49 @@ namespace AutopilotCore
             return (float)(-roll * (180.0 / System.Math.PI));
         }
 
+        public static float GetTrack(this Vessel vessel)
+        {
+            // TODO: validate in flight
+            Vector3d horiz = Vector3d.Exclude(vessel.upAxis, vessel.GetSrfVelocity());
+            if (horiz.sqrMagnitude < 0.25)
+            {
+                return vessel.GetHeading();
+            }
+
+            double track = System.Math.Atan2(Vector3d.Dot(horiz, vessel.east), Vector3d.Dot(horiz, vessel.north));
+            return (float)((track * (180.0 / System.Math.PI) + 360.0) % 360.0);
+        }
+
+        // Horizontal surface velocity in m/s, x = east, y = north.
+        public static Vector2 GetGroundVelocity(this Vessel vessel)
+        {
+            Vector3d vel = vessel.GetSrfVelocity();
+            return new Vector2((float)Vector3d.Dot(vel, vessel.east), (float)Vector3d.Dot(vel, vessel.north));
+        }
+
+        public static void GetFlightPathOffsets(this Vessel vessel, out float up, out float right)
+        {
+            // TODO: validate in flight
+            Vector3d vel = vessel.GetSrfVelocity();
+            Transform t = vessel.ReferenceTransform;
+            double forward = Vector3d.Dot(vel, t.up);
+            if (vel.sqrMagnitude < 1.0 || forward < 0.1)
+            {
+                up = 0f;
+                right = 0f;
+                return;
+            }
+
+            const double toDeg = 180.0 / System.Math.PI;
+            up = (float)(System.Math.Atan2(Vector3d.Dot(vel, -t.forward), forward) * toDeg);
+            right = (float)(System.Math.Atan2(Vector3d.Dot(vel, t.right), forward) * toDeg);
+        }
+
+        public static float GetOatC(this Vessel vessel)
+        {
+            return (float)(vessel.atmosphericTemperature - 273.15);
+        }
+
         public static float GetAltitudeASL(this Vessel vessel)
         {
             // TODO: validate in flight

@@ -24,6 +24,10 @@
     </PropertyGroup>
     <MakeDir Directories="$(KspDevDir)" />
     <Delete Files="$(KspDevDir)\AutopilotCore.dll" />
+    <ItemGroup>
+      <GyroTexture Include="Assets\Textures\*.png" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GyroTexture)" DestinationFolder="$(KSPDir)\GameData\MyAutopilot\PluginData\Textures" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(KspDevDir)\AutopilotCore.bin" SkipUnchangedFiles="false" />
     <Message Importance="high" Text="$(AssemblyName) copied to $(KspDevDir)\AutopilotCore.bin" />
   </Target>

@@ -14,6 +14,11 @@ namespace AutopilotCore
 
         public bool Enabled { get; set; }
 
+        public float TargetKt
+        {
+            get { return _target.Value; }
+        }
+
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
             if (!Enabled || vessel == null)

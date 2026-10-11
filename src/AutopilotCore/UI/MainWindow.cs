@@ -8,18 +8,64 @@ namespace AutopilotCore
 
         private readonly ModuleManager _modules;
         private readonly FlightTape _tape = new FlightTape();
-        private Rect _rect = new Rect(40f, 80f, 320f, 520f);
+        private readonly FlightData _data = new FlightData();
+        private readonly PrimaryFlightDisplay _pfd = new PrimaryFlightDisplay();
+        private readonly NavigationDisplay _nav;
+        private readonly DirectionalGyroWindow _gyro = new DirectionalGyroWindow();
+        private readonly InstrumentWindow[] _instruments;
+        private Rect _rect = new Rect(40f, 80f, 380f, 0f);
         private Vessel _vessel;
 
         public MainWindow(ModuleManager modules)
         {
             _modules = modules;
+            _nav = new NavigationDisplay(modules.Find<NavHold>());
+            _instruments = new InstrumentWindow[] { _pfd, _nav, _gyro };
         }
 
         public void Draw(Vessel vessel)
         {
             _vessel = vessel;
-            _rect = GUI.Window(WindowId, _rect, DrawContents, WindowTitle());
+            // Shrinking only on Layout keeps the size stable across mouse events, which caused flicker.
+            if (Event.current.type == EventType.Layout)
+            {
+                _rect.height = 0f;
+            }
+
+            _rect = GUILayout.Window(WindowId, _rect, DrawContents, WindowTitle(), GUILayout.Width(380f));
+
+            for (int i = 0; i < _instruments.Length; i++)
+            {
+                _instruments[i].DrawWindow();
+            }
+        }
+
+        public void RenderInstruments(Vessel vessel)
+        {
+            bool anyVisible = false;
+            for (int i = 0; i < _instruments.Length; i++)
+            {
+                anyVisible |= _instruments[i].Visible;
+            }
+
+            if (!anyVisible)
+            {
+                return;
+            }
+
+            _data.Update(vessel, _modules, Time.deltaTime);
+            for (int i = 0; i < _instruments.Length; i++)
+            {
+                _instruments[i].RenderFrame(_data);
+            }
+        }
+
+        public void Dispose()
+        {
+            for (int i = 0; i < _instruments.Length; i++)
+            {
+                _instruments[i].Dispose();
+            }
         }
 
         private static string WindowTitle()
@@ -40,6 +86,16 @@ namespace AutopilotCore
             {
                 _modules.DisableAll();
             }
+
+            GUILayout.Space(10f);
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label("Instruments");
+            GUILayout.BeginHorizontal();
+            _pfd.Visible = GUILayout.Toggle(_pfd.Visible, "PFD", GUI.skin.button);
+            _nav.Visible = GUILayout.Toggle(_nav.Visible, "Nav display", GUI.skin.button);
+            _gyro.Visible = GUILayout.Toggle(_gyro.Visible, "Directional gyro", GUI.skin.button);
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
 
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 20f));
         }

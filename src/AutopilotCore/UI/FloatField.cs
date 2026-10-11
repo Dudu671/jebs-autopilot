@@ -21,8 +21,13 @@ namespace AutopilotCore
 
         public void Draw(string label)
         {
+            Draw(label, 110f);
+        }
+
+        public void Draw(string label, float labelWidth)
+        {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(110f));
+            GUILayout.Label(label, GUILayout.Width(labelWidth));
             string next = GUILayout.TextField(_text, GUILayout.MinWidth(80f));
             if (next != _text)
             {

@@ -18,6 +18,20 @@ namespace AutopilotCore
             Discover(Assembly.GetExecutingAssembly());
         }
 
+        public T Find<T>() where T : class, IAutopilotModule
+        {
+            for (int i = 0; i < _modules.Count; i++)
+            {
+                T module = _modules[i] as T;
+                if (module != null)
+                {
+                    return module;
+                }
+            }
+
+            return null;
+        }
+
         public void Register(IAutopilotModule module)
         {
             if (module == null)
@@ -40,7 +54,24 @@ namespace AutopilotCore
         {
             for (int i = 0; i < _modules.Count; i++)
             {
-                _modules[i].DrawGui();
+                IAutopilotModule module = _modules[i];
+                bool wasEnabled = module.Enabled;
+                module.DrawGui();
+                if (!wasEnabled && module.Enabled && module is ILateralMode)
+                {
+                    DisableOtherLateralModes(module);
+                }
+            }
+        }
+
+        private void DisableOtherLateralModes(IAutopilotModule keep)
+        {
+            for (int i = 0; i < _modules.Count; i++)
+            {
+                if (_modules[i] != keep && _modules[i] is ILateralMode)
+                {
+                    _modules[i].Enabled = false;
+                }
             }
         }
 

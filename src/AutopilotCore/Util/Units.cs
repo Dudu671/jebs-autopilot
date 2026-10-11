@@ -6,5 +6,6 @@ namespace AutopilotCore
         public const float FeetPerMeter = 3.2808399f;
         public const float KnotsPerMps = 1.9438445f;
         public const float FpmPerMps = 196.85039f;
+        public const double MetersPerNm = 1852.0;
     }
 }

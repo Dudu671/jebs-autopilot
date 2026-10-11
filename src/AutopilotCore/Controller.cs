@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace AutopilotCore
@@ -14,6 +15,21 @@ namespace AutopilotCore
             _window = new MainWindow(_modules);
             AttachVessel(FlightGlobals.ActiveVessel);
             GameEvents.onVesselChange.Add(OnVesselChange);
+            StartCoroutine(RenderInstrumentsLoop());
+        }
+
+        // GL drawing into RenderTextures is safe after the frame is rendered; IMGUI shows it next frame.
+        private IEnumerator RenderInstrumentsLoop()
+        {
+            WaitForEndOfFrame endOfFrame = new WaitForEndOfFrame();
+            while (true)
+            {
+                yield return endOfFrame;
+                if (_window != null)
+                {
+                    _window.RenderInstruments(_vessel);
+                }
+            }
         }
 
         private void OnVesselChange(Vessel vessel)
@@ -63,6 +79,12 @@ namespace AutopilotCore
             }
 
             GameEvents.onVesselChange.Remove(OnVesselChange);
+
+            if (_window != null)
+            {
+                _window.Dispose();
+                _window = null;
+            }
         }
     }
 }
