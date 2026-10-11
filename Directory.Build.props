@@ -1,0 +1,38 @@
+<Project>
+  <PropertyGroup>
+    <!-- Ajuste este caminho para a pasta de instalação do KSP 1.12.x -->
+    <KSPDir Condition="'$(KSPDir)' == ''">C:\Path\To\Kerbal Space Program</KSPDir>
+    <KSPManaged>$(KSPDir)\KSP_x64_Data\Managed</KSPManaged>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(KSPManaged)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(KSPManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(KSPManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(KSPManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="EnsureKspDir" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(KSPDir)')"
+           Text="KSPDir não existe: '$(KSPDir)'. Edite Directory.Build.props (propriedade KSPDir) e aponte para a pasta de instalação do KSP 1.12.x." />
+    <Error Condition="!Exists('$(KSPManaged)\Assembly-CSharp.dll')"
+           Text="Não achei Assembly-CSharp.dll em '$(KSPManaged)'. Confira se KSPDir aponta para a raiz do KSP (a pasta que contém KSP_x64.exe)." />
+  </Target>
+</Project>

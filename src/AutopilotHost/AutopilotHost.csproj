@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>AutopilotHost</AssemblyName>
+    <RootNamespace>AutopilotHost</RootNamespace>
+  </PropertyGroup>
+
+  <Target Name="CopyHostToKsp" AfterTargets="Build">
+    <PropertyGroup>
+      <KspPluginsDir>$(KSPDir)\GameData\MyAutopilot\Plugins</KspPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(KspPluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspPluginsDir)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="AutopilotHost copiado para $(KspPluginsDir)" />
+  </Target>
+</Project>

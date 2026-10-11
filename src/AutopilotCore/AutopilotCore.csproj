@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>AutopilotCore</AssemblyName>
+    <RootNamespace>AutopilotCore</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Core NÃO vai para Plugins/: o Host carrega esta DLL em runtime a partir de Dev/. -->
+  <Target Name="CopyCoreToKspDev" AfterTargets="Build">
+    <PropertyGroup>
+      <KspDevDir>$(KSPDir)\GameData\MyAutopilot\Dev</KspDevDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(KspDevDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspDevDir)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="AutopilotCore copiado para $(KspDevDir)" />
+  </Target>
+</Project>
