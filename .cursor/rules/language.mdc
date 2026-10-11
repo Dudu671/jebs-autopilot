@@ -7,7 +7,7 @@ alwaysApply: true
 
 - Write all source code in English: identifiers, strings, logs, build messages, and comments.
 - In-game UI is English (IMGUI labels, buttons, window titles).
-- Keep `README.md` in Portuguese unless asked otherwise.
+- Write `README.md` in English.
 
 # Comments
 

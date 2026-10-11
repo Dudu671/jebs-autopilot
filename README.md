@@ -1,32 +1,34 @@
 # Jeb's Autopilot (KSP 1.12.x)
 
-Plugin de piloto automático com **hot reload**: o KSP carrega só o Host; a lógica vive no Core e pode ser recompilada com o jogo aberto.
+Autopilot plugin with **hot reload**: KSP loads only the Host; the logic lives in the Core and can be rebuilt while the game is running.
 
-## Ajustar `KSPDir`
+## Set `KSPDir`
 
-`Directory.Build.props` já aponta para a instalação Steam local:
+`Directory.Build.props` already points at the local Steam install:
 
 `C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program`
 
-Mude `KSPDir` se o jogo estiver em outro disco. O build falha com mensagem clara se esse caminho não existir. Dá para sobrescrever na linha de comando:
+Change `KSPDir` if the game is on another drive. The build fails with a clear message if that path does not exist. You can override it on the command line:
 
 ```bat
-dotnet build /p:KSPDir="C:\caminho\do\KSP"
+dotnet build /p:KSPDir="C:\path\to\KSP"
 ```
 
-## Compilar
+## Build
 
 ```bat
 dotnet build KspAutopilot.sln
 ```
 
 - **AutopilotHost** → `$(KSPDir)/GameData/MyAutopilot/Plugins/`
-- **AutopilotCore** → `$(KSPDir)/GameData/MyAutopilot/Dev/` (não vai para `Plugins/`)
+- **AutopilotCore** → `$(KSPDir)/GameData/MyAutopilot/Dev/AutopilotCore.bin` (not a `.dll` under `GameData`, or KSP locks the file)
 
 ## Hot reload
 
-1. Abra o KSP e entre em voo (o Host só roda em `Flight`).
-2. Altere o Core e rode `dotnet build` de novo.
-3. O Host observa `GameData/MyAutopilot/Dev/AutopilotCore.dll`, espera 0,3 s e recarrega: destrói o `GameObject` antigo, carrega os bytes da DLL (`Assembly.Load` em memória, sem travar o arquivo) e adiciona `AutopilotCore.Controller`.
+The Host only runs in **flight**. A Host change requires **restarting KSP**.
 
-Não é preciso sair do voo nem reiniciar o jogo para iterar na lógica.
+1. Enter flight.
+2. Run `dotnet build` (the game can stay open).
+3. After about 0.3 s the window closes and comes back on its own. If it does not, press **F8**.
+
+Each Core build gets a new **assembly name** (`AutopilotCore_<timestamp>`). KSP's Mono reuses an already loaded assembly with the same name, even when the version changes; with a fixed name, F8 would only recreate the window with the old code. The window title shows the loaded version.

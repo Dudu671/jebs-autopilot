@@ -6,7 +6,7 @@ namespace AutopilotCore
     {
         private readonly Pid _altitudePid = new Pid(0.02f, 0.0002f, 0.04f, 200f);
         private readonly PitchHold _pitchHold = new PitchHold();
-        private float _target = 1000f;
+        private readonly FloatField _targetFt = new FloatField(3000f);
 
         public string Name
         {
@@ -25,7 +25,8 @@ namespace AutopilotCore
                 return;
             }
 
-            float error = _target - vessel.GetAltitudeASL();
+            float targetMeters = _targetFt.Value * Units.MetersPerFoot;
+            float error = targetMeters - vessel.GetAltitudeASL();
             float pitchTarget = _altitudePid.Step(error, TimeWarp.fixedDeltaTime);
             pitchTarget = Mathf.Clamp(pitchTarget, -25f, 25f);
 
@@ -36,8 +37,7 @@ namespace AutopilotCore
         public void DrawGui()
         {
             Enabled = GUILayout.Toggle(Enabled, Name);
-            GUILayout.Label("Target ASL (m): " + _target.ToString("F0"));
-            _target = GUILayout.HorizontalSlider(_target, 0f, 25000f);
+            _targetFt.Draw("Target ASL (ft)");
         }
     }
 }

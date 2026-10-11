@@ -50,7 +50,7 @@ namespace AutopilotCore
         {
             if (_window != null)
             {
-                _window.Draw();
+                _window.Draw(_vessel);
             }
         }
 

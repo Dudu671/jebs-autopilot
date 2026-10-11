@@ -1,16 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>AutopilotCore</AssemblyName>
+    <CoreBuildStamp>$([System.DateTime]::UtcNow.ToString("MMddHHmmssfff"))</CoreBuildStamp>
+    <!-- KSP's Mono returns an already-loaded assembly with the same simple name, ignoring version. -->
+    <AssemblyName>AutopilotCore_$(CoreBuildStamp)</AssemblyName>
     <RootNamespace>AutopilotCore</RootNamespace>
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.$([System.DateTime]::UtcNow.ToString("MMdd")).$([System.DateTime]::UtcNow.ToString("HHmm")).$([System.DateTime]::UtcNow.ToString("ssfff"))</AssemblyVersion>
+    <FileVersion>$(AssemblyVersion)</FileVersion>
+    <InformationalVersion>$(AssemblyVersion)</InformationalVersion>
   </PropertyGroup>
 
-  <!-- Core must not go to Plugins/: the Host loads this DLL at runtime from Dev/. -->
+  <Target Name="CleanStampedCoreOutputs" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <StaleCoreOutput Include="$(OutDir)AutopilotCore_*.*;$(IntermediateOutputPath)AutopilotCore_*.*" />
+    </ItemGroup>
+    <Delete Files="@(StaleCoreOutput)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Copy as .bin so KSP's AssemblyLoader does not load/lock it from GameData. -->
   <Target Name="CopyCoreToKspDev" AfterTargets="Build">
     <PropertyGroup>
       <KspDevDir>$(KSPDir)\GameData\MyAutopilot\Dev</KspDevDir>
     </PropertyGroup>
     <MakeDir Directories="$(KspDevDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspDevDir)" SkipUnchangedFiles="false" />
-    <Message Importance="high" Text="AutopilotCore copied to $(KspDevDir)" />
+    <Delete Files="$(KspDevDir)\AutopilotCore.dll" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(KspDevDir)\AutopilotCore.bin" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="$(AssemblyName) copied to $(KspDevDir)\AutopilotCore.bin" />
   </Target>
 </Project>
