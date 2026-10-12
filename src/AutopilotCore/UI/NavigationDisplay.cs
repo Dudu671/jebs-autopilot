@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace AutopilotCore
@@ -98,7 +99,8 @@ namespace AutopilotCore
 
             if (_addMode)
             {
-                c.Text("CLICK MAP TO ADD WAYPOINT", MapArea.xMax - 8f, MapArea.yMax - 10f, 12, Cyan, TextAlign.Right);
+                string hint = MapView.MapIsEnabled ? "CLICK THE PLANET" : "OPENING MAP VIEW";
+                c.Text(hint, MapArea.xMax - 8f, MapArea.yMax - 10f, 12, Cyan, TextAlign.Right);
             }
         }
 
@@ -126,18 +128,130 @@ namespace AutopilotCore
             }
         }
 
-        protected override bool OnCanvasClick(Vector2 point, int button)
+        // Picks a surface point on the vessel's planet. The 2D map only displays the route.
+        public void PollMapClick(Vessel vessel, Func<Vector2, bool> mouseOverGui)
         {
-            if (!_addMode || button != 0 || _plan == null || !_hasView || !MapArea.Contains(point))
+            if (!_addMode || _plan == null || vessel == null || !MapView.MapIsEnabled)
+            {
+                return;
+            }
+
+            if (!Input.GetMouseButtonDown(0) || mouseOverGui == null)
+            {
+                return;
+            }
+
+            Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            if (mouseOverGui(guiMouse))
+            {
+                return;
+            }
+
+            double lat;
+            double lon;
+            if (TryPickSurface(vessel.mainBody, out lat, out lon))
+            {
+                _plan.Add(lat, lon);
+            }
+        }
+
+        // The map camera lives in scaled space. Walk the ray until it meets the terrain, so a click
+        // on a mountain lands on that slope instead of the sea-level point behind it.
+        private static bool TryPickSurface(CelestialBody body, out double latitude, out double longitude)
+        {
+            latitude = 0.0;
+            longitude = 0.0;
+            Camera camera = PlanetariumCamera.Camera;
+            if (body == null || camera == null)
             {
                 return false;
             }
 
-            Vector2 local = Canvas2D.Rotate(point - AircraftPos, -_viewRot);
-            double lat;
-            double lon;
-            NavMath.FromLocal(_viewRadius, _viewLat, _viewLon, local.x / _viewPxPerM, -local.y / _viewPxPerM, out lat, out lon);
-            _plan.Add(lat, lon);
+            Ray ray = camera.ScreenPointToRay(Input.mousePosition);
+            Vector3d origin = ScaledSpace.ScaledToLocalSpace(ray.origin);
+            Vector3d direction = ((Vector3d)ray.direction).normalized;
+            Vector3d relative = origin - body.position;
+            double outer = body.Radius + 20000.0;
+            if (body.pqsController != null)
+            {
+                outer = body.pqsController.radius + Math.Max(0.0, body.pqsController.radiusDelta) + 1000.0;
+            }
+
+            double enter;
+            double exit;
+            if (!RaySphere(relative, direction, outer, out enter, out exit) || exit < 0.0)
+            {
+                return false;
+            }
+
+            double lo = Math.Max(0.0, enter);
+            double hi = exit;
+            const int steps = 24;
+            double previousT = lo;
+            double previousGap = SurfaceGap(body, origin + (direction * lo));
+            bool bracketed = false;
+            for (int i = 1; i <= steps; i++)
+            {
+                double t = lo + ((hi - lo) * i / steps);
+                double gap = SurfaceGap(body, origin + (direction * t));
+                if (previousGap > 0.0 && gap <= 0.0)
+                {
+                    lo = previousT;
+                    hi = t;
+                    bracketed = true;
+                    break;
+                }
+
+                previousT = t;
+                previousGap = gap;
+            }
+
+            if (!bracketed)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < 12; i++)
+            {
+                double mid = (lo + hi) * 0.5;
+                if (SurfaceGap(body, origin + (direction * mid)) > 0.0)
+                {
+                    lo = mid;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+
+            Vector3d hit = origin + (direction * hi);
+            latitude = body.GetLatitude(hit);
+            longitude = body.GetLongitude(hit);
+            return true;
+        }
+
+        private static double SurfaceGap(CelestialBody body, Vector3d point)
+        {
+            double lat = body.GetLatitude(point);
+            double lon = body.GetLongitude(point);
+            double terrain = Math.Max(0.0, body.TerrainAltitude(lat, lon, true));
+            return (point - body.position).magnitude - (body.Radius + terrain);
+        }
+
+        private static bool RaySphere(Vector3d origin, Vector3d direction, double radius, out double near, out double far)
+        {
+            double along = Vector3d.Dot(origin, direction);
+            double discriminant = (along * along) - Vector3d.Dot(origin, origin) + (radius * radius);
+            if (discriminant < 0.0)
+            {
+                near = 0.0;
+                far = 0.0;
+                return false;
+            }
+
+            double root = Math.Sqrt(discriminant);
+            near = -along - root;
+            far = -along + root;
             return true;
         }
 
@@ -145,7 +259,15 @@ namespace AutopilotCore
         {
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
-            _addMode = GUILayout.Toggle(_addMode, "Add waypoints", GUI.skin.button);
+            bool add = GUILayout.Toggle(_addMode, "Add waypoints", GUI.skin.button);
+            if (add != _addMode)
+            {
+                _addMode = add;
+                if (_addMode && !MapView.MapIsEnabled)
+                {
+                    MapView.EnterMapView();
+                }
+            }
             if (_plan.Count > 0 && GUILayout.Button("Clear all", GUILayout.Width(80f)))
             {
                 _plan.Clear();

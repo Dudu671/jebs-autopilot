@@ -11,6 +11,7 @@ namespace AutopilotCore
         private readonly FlightData _data = new FlightData();
         private readonly PrimaryFlightDisplay _pfd = new PrimaryFlightDisplay();
         private readonly NavigationDisplay _nav;
+        private readonly MapRouteOverlay _mapRoute;
         private readonly DirectionalGyroWindow _gyro = new DirectionalGyroWindow();
         private readonly InstrumentWindow[] _instruments;
         private Rect _rect = new Rect(40f, 80f, 380f, 0f);
@@ -20,6 +21,7 @@ namespace AutopilotCore
         {
             _modules = modules;
             _nav = new NavigationDisplay(modules.Find<NavHold>());
+            _mapRoute = new MapRouteOverlay(modules.Find<NavHold>());
             _instruments = new InstrumentWindow[] { _pfd, _nav, _gyro };
         }
 
@@ -38,6 +40,32 @@ namespace AutopilotCore
             {
                 _instruments[i].DrawWindow();
             }
+
+            _mapRoute.Sync(vessel);
+        }
+
+        public void PollWaypointPick()
+        {
+            _nav.PollMapClick(_vessel, MouseOverWindow);
+        }
+
+        private bool MouseOverWindow(Vector2 guiMouse)
+        {
+            if (_rect.height > 1f && _rect.Contains(guiMouse))
+            {
+                return true;
+            }
+
+            for (int i = 0; i < _instruments.Length; i++)
+            {
+                InstrumentWindow window = _instruments[i];
+                if (window.Visible && window.WindowRect.height > 1f && window.WindowRect.Contains(guiMouse))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public void RenderInstruments(Vessel vessel)
@@ -66,6 +94,8 @@ namespace AutopilotCore
             {
                 _instruments[i].Dispose();
             }
+
+            _mapRoute.Dispose();
         }
 
         private static string WindowTitle()

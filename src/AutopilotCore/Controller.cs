@@ -62,6 +62,14 @@ namespace AutopilotCore
             _modules.UpdateAll(_vessel, ctrl);
         }
 
+        private void Update()
+        {
+            if (_window != null)
+            {
+                _window.PollWaypointPick();
+            }
+        }
+
         private void OnGUI()
         {
             if (_window != null)

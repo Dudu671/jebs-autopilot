@@ -19,6 +19,11 @@ namespace AutopilotCore
 
         public bool Visible { get; set; }
 
+        public Rect WindowRect
+        {
+            get { return _rect; }
+        }
+
         protected virtual Color Background
         {
             get { return new Color(0.05f, 0.05f, 0.06f, 1f); }

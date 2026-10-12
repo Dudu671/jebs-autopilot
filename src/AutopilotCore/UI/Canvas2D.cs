@@ -40,6 +40,8 @@ namespace AutopilotCore
         private bool _builtinFontTried;
 
         private RenderTexture _previousTarget;
+        private Vector4 _previousClip;
+        private float _previousGuiZTest;
         private Material _activeMaterial;
         private Texture _activeTexture;
         private bool _batchOpen;
@@ -83,6 +85,11 @@ namespace AutopilotCore
 
             _previousTarget = RenderTexture.active;
             RenderTexture.active = _target;
+            // Map view leaves UI clip and depth-test state that discards this texture.
+            _previousClip = Shader.GetGlobalVector("_ClipRect");
+            _previousGuiZTest = Shader.GetGlobalFloat("unity_GUIZTestMode");
+            ApplyGuiDrawState();
+            GL.Viewport(new Rect(0f, 0f, _width, _height));
             GL.PushMatrix();
             GL.LoadPixelMatrix(0f, _width, _height, 0f);
             GL.Clear(false, true, clear);
@@ -95,6 +102,8 @@ namespace AutopilotCore
         {
             Flush();
             GL.PopMatrix();
+            Shader.SetGlobalVector("_ClipRect", _previousClip);
+            Shader.SetGlobalFloat("unity_GUIZTestMode", _previousGuiZTest);
             RenderTexture.active = _previousTarget;
             _previousTarget = null;
             _activeMaterial = null;
@@ -425,10 +434,18 @@ namespace AutopilotCore
             }
 
             material.SetPass(0);
+            // SetPass uploads the material clip. Put the instrument rect back afterwards.
+            ApplyGuiDrawState();
             GL.Begin(GL.TRIANGLES);
             _batchOpen = true;
             _activeMaterial = material;
             _activeTexture = texture;
+        }
+
+        private static void ApplyGuiDrawState()
+        {
+            Shader.SetGlobalVector("_ClipRect", new Vector4(-1e8f, -1e8f, 1e8f, 1e8f));
+            Shader.SetGlobalFloat("unity_GUIZTestMode", (float)CompareFunction.Always);
         }
 
         private void Flush()

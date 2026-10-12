@@ -124,7 +124,7 @@ namespace AutopilotCore
                 double north = (-1.0 + ((j + 0.5) * 2.0 / Size)) * _buildHalf;
                 double lat = Math.Max(-89.9, Math.Min(89.9, _buildLat + (north / radius * toDeg)));
                 double lon = _buildLon + (east / (radius * cosLat) * toDeg);
-                _heights[_next] = hasTerrain ? (float)_buildBody.TerrainAltitude(lat, lon, true) : 0f;
+                _heights[_next] = hasTerrain ? (float)SampleHeight(_buildBody, lat, lon) : 0f;
                 _next++;
 
                 if ((_next & 31) == 0 && _stopwatch.Elapsed.TotalMilliseconds > budgetMs)
@@ -179,6 +179,23 @@ namespace AutopilotCore
             HalfSizeM = _buildHalf;
             HasMap = true;
             _building = false;
+        }
+
+        // GetSurfaceHeight still answers in map view, when TerrainAltitude can collapse to sea level.
+        private static double SampleHeight(CelestialBody body, double latitude, double longitude)
+        {
+            PQS pqs = body.pqsController;
+            if (pqs != null)
+            {
+                Vector3d radial = body.GetRelSurfaceNVector(latitude, longitude);
+                double surface = pqs.GetSurfaceHeight(radial);
+                if (surface > 1.0)
+                {
+                    return surface - body.Radius;
+                }
+            }
+
+            return body.TerrainAltitude(latitude, longitude, true);
         }
 
         private bool IsCoast(int i, int j)
