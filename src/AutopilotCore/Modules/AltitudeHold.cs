@@ -70,7 +70,7 @@ namespace AutopilotCore
 
             if (!_active)
             {
-                Engage(pitch, vs, fpa);
+                Engage(vessel, pitch, vs, fpa);
             }
 
             float limitFpm = Mathf.Max(1f, Mathf.Abs(_vsLimitFpm.Value));
@@ -119,7 +119,7 @@ namespace AutopilotCore
             }
         }
 
-        private void Engage(float pitch, float vs, float fpa)
+        private void Engage(Vessel vessel, float pitch, float vs, float fpa)
         {
             _active = true;
             _vsCmd = vs;
@@ -134,7 +134,7 @@ namespace AutopilotCore
             _fastCrossings = 0;
             _sameSignTime = 0f;
             _pitchHold.Reset();
-            _recorder.Start();
+            _recorder.Start(vessel);
         }
 
         private void Adapt(float fpaError, float dt)

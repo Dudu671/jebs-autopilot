@@ -11,9 +11,10 @@ namespace AutopilotCore
         private const float SampleInterval = 0.1f;
         private const float FlushInterval = 1f;
 
-        private readonly string _path;
+        private readonly string _fileName;
         private readonly string _header;
         private readonly StringBuilder _buffer = new StringBuilder();
+        private string _path;
         private float _time;
         private float _nextSample;
         private float _nextFlush;
@@ -21,12 +22,15 @@ namespace AutopilotCore
 
         public FlightRecorder(string fileName, string header)
         {
-            _path = Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "Logs"), Path.Combine("MyAutopilot", fileName));
+            _fileName = fileName;
             _header = header;
         }
 
-        public void Start()
+        // One folder per vessel, so vessels flown at the same time do not share a file.
+        public void Start(Vessel vessel)
         {
+            string root = Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "Logs"), "MyAutopilot");
+            _path = Path.Combine(Path.Combine(root, FolderName(vessel)), _fileName);
             _time = 0f;
             _nextSample = 0f;
             _nextFlush = FlushInterval;
@@ -95,6 +99,19 @@ namespace AutopilotCore
             }
 
             _buffer.Length = 0;
+        }
+
+        private static string FolderName(Vessel vessel)
+        {
+            string name = vessel.vesselName ?? "vessel";
+            char[] invalid = Path.GetInvalidFileNameChars();
+            StringBuilder clean = new StringBuilder(name.Length);
+            for (int i = 0; i < name.Length; i++)
+            {
+                clean.Append(Array.IndexOf(invalid, name[i]) >= 0 ? '_' : name[i]);
+            }
+
+            return clean.ToString().Trim() + "-" + vessel.id.ToString("N").Substring(0, 8);
         }
     }
 }

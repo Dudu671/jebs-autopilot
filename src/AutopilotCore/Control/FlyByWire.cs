@@ -124,11 +124,12 @@ namespace AutopilotCore
         private float _lastPitch;
         private float _lastBank;
         private bool _ready;
+        private float _lastTick = float.NegativeInfinity;
         private Guid _vesselId;
 
         public bool Enabled { get; set; }
 
-        public void Apply(Vessel vessel, FlightCtrlState ctrl, bool pitchOwned, bool rollOwned)
+        public void Apply(Vessel vessel, FlightCtrlState ctrl, bool piloted, bool pitchOwned, bool rollOwned)
         {
             if (!Enabled || vessel == null || vessel.ReferenceTransform == null || vessel.LandedOrSplashed)
             {
@@ -142,12 +143,16 @@ namespace AutopilotCore
             }
 
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
-            if (!_ready || vessel.id != _vesselId)
+
+            // A gap means the vessel was on rails; its state is stale.
+            bool resumed = Time.fixedTime - _lastTick > 0.5f;
+            _lastTick = Time.fixedTime;
+            if (!_ready || vessel.id != _vesselId || resumed)
             {
                 Engage(vessel, ctrl, body);
             }
 
-            float precision = PrecisionScale();
+            float precision = piloted ? PrecisionScale() : 0f;
             float pitchIn = (ctrl.pitch - ctrl.pitchTrim) * precision;
             float rollIn = (ctrl.roll - ctrl.rollTrim) * precision;
             float yawIn = (ctrl.yaw - ctrl.yawTrim) * precision;
@@ -372,7 +377,7 @@ namespace AutopilotCore
             }
 
             _rollTrim = _integral[Roll];
-            _recorder.Start();
+            _recorder.Start(vessel);
         }
 
         private void Disarm()

@@ -16,20 +16,16 @@ namespace AutopilotCore
         private static readonly Color Active = new Color(1f, 0.35f, 1f, 1f);
         private static readonly Color FuturePoint = new Color(0.3f, 0.9f, 1f, 1f);
 
-        private readonly NavHold _nav;
         private readonly List<Vector2> _run = new List<Vector2>(64);
+        private NavHold _nav;
         private GUIStyle _label;
         private MapRouteHook _hook;
         private Vessel _vessel;
 
-        public MapRouteOverlay(NavHold nav)
-        {
-            _nav = nav;
-        }
-
-        public void Sync(Vessel vessel)
+        public void Sync(Vessel vessel, NavHold nav)
         {
             _vessel = vessel;
+            _nav = nav;
             AttachHook();
         }
 

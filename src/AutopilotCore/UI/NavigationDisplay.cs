@@ -24,8 +24,8 @@ namespace AutopilotCore
         private static readonly Color Cyan = new Color(0.3f, 0.9f, 1f);
 
         private readonly TerrainMap _map = new TerrainMap();
-        private readonly NavHold _nav;
-        private readonly NavPlan _plan;
+        private NavHold _nav;
+        private NavPlan _plan;
         private int _rangeIndex = 3;
         private bool _headingUp = true;
         private bool _addMode;
@@ -40,11 +40,16 @@ namespace AutopilotCore
         private float _viewGsKt;
         private float[] _routeNm = new float[0];
 
-        public NavigationDisplay(NavHold nav)
+        public NavigationDisplay()
             : base(0x4A454256, "Navigation Display", 460, 480, 620f, 120f)
+        {
+        }
+
+        public void Bind(NavHold nav)
         {
             _nav = nav;
             _plan = nav != null ? nav.Plan : null;
+            _addMode = false;
         }
 
         protected override Color Background

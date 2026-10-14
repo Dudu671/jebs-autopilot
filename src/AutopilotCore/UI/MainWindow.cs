@@ -2,33 +2,34 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
+    // Always shows and edits the active vessel's autopilot.
     public sealed class MainWindow
     {
         private const int WindowId = 0x4A454253; // "JEBS"
 
-        private readonly ModuleManager _modules;
         private readonly FlightTape _tape = new FlightTape();
-        private readonly FlyByWire _flyByWire = new FlyByWire();
         private readonly FlightData _data = new FlightData();
         private readonly PrimaryFlightDisplay _pfd = new PrimaryFlightDisplay();
-        private readonly NavigationDisplay _nav;
-        private readonly MapRouteOverlay _mapRoute;
+        private readonly NavigationDisplay _nav = new NavigationDisplay();
+        private readonly MapRouteOverlay _mapRoute = new MapRouteOverlay();
         private readonly DirectionalGyroWindow _gyro = new DirectionalGyroWindow();
         private readonly InstrumentWindow[] _instruments;
         private Rect _rect = new Rect(40f, 80f, 380f, 0f);
-        private Vessel _vessel;
+        private VesselPilot _pilot;
 
-        public MainWindow(ModuleManager modules)
+        public MainWindow()
         {
-            _modules = modules;
-            _nav = new NavigationDisplay(modules.Find<NavHold>());
-            _mapRoute = new MapRouteOverlay(modules.Find<NavHold>());
             _instruments = new InstrumentWindow[] { _pfd, _nav, _gyro };
         }
 
-        public void Draw(Vessel vessel)
+        public void Draw(VesselPilot pilot)
         {
-            _vessel = vessel;
+            Bind(pilot);
+            if (_pilot == null)
+            {
+                return;
+            }
+
             // Shrinking only on Layout keeps the size stable across mouse events, which caused flicker.
             if (Event.current.type == EventType.Layout)
             {
@@ -42,28 +43,26 @@ namespace AutopilotCore
                 _instruments[i].DrawWindow();
             }
 
-            _mapRoute.Sync(vessel);
-        }
-
-        public void ApplyFlyByWire(Vessel vessel, FlightCtrlState ctrl)
-        {
-            PitchHold pitch = _modules.Find<PitchHold>();
-            AltitudeHold altitude = _modules.Find<AltitudeHold>();
-            HeadingHold heading = _modules.Find<HeadingHold>();
-            NavHold nav = _modules.Find<NavHold>();
-            bool pitchOwned = (pitch != null && pitch.Enabled) || (altitude != null && altitude.Enabled);
-            bool rollOwned = (heading != null && heading.Enabled) || (nav != null && nav.Enabled);
-            _flyByWire.Apply(vessel, ctrl, pitchOwned, rollOwned);
-        }
-
-        public void FinishFlyByWire(FlightCtrlState ctrl)
-        {
-            _flyByWire.ReassertYaw(ctrl);
+            _mapRoute.Sync(_pilot.Vessel, _pilot.Nav);
         }
 
         public void PollWaypointPick()
         {
-            _nav.PollMapClick(_vessel, MouseOverWindow);
+            if (_pilot != null)
+            {
+                _nav.PollMapClick(_pilot.Vessel, MouseOverWindow);
+            }
+        }
+
+        private void Bind(VesselPilot pilot)
+        {
+            if (pilot == _pilot)
+            {
+                return;
+            }
+
+            _pilot = pilot;
+            _nav.Bind(pilot != null ? pilot.Nav : null);
         }
 
         private bool MouseOverWindow(Vector2 guiMouse)
@@ -85,7 +84,7 @@ namespace AutopilotCore
             return false;
         }
 
-        public void RenderInstruments(Vessel vessel)
+        public void RenderInstruments(VesselPilot pilot)
         {
             bool anyVisible = false;
             for (int i = 0; i < _instruments.Length; i++)
@@ -93,12 +92,13 @@ namespace AutopilotCore
                 anyVisible |= _instruments[i].Visible;
             }
 
-            if (!anyVisible)
+            if (!anyVisible || pilot == null)
             {
                 return;
             }
 
-            _data.Update(vessel, _modules, Time.deltaTime);
+            Bind(pilot);
+            _data.Update(pilot.Vessel, pilot.Modules, Time.deltaTime);
             for (int i = 0; i < _instruments.Length; i++)
             {
                 _instruments[i].RenderFrame(_data);
@@ -123,18 +123,18 @@ namespace AutopilotCore
 
         private void DrawContents(int id)
         {
-            _tape.Draw(_vessel);
+            _tape.Draw(_pilot.Vessel);
 
             GUILayout.Space(6f);
-            _flyByWire.Enabled = GUILayout.Toggle(_flyByWire.Enabled, "Fly-by-wire", GUI.skin.button);
+            _pilot.FlyByWire.Enabled = GUILayout.Toggle(_pilot.FlyByWire.Enabled, "Fly-by-wire", GUI.skin.button);
 
             GUILayout.Space(6f);
-            _modules.DrawAllGui();
+            _pilot.Modules.DrawAllGui();
 
             GUILayout.Space(8f);
             if (GUILayout.Button("Disable all"))
             {
-                _modules.DisableAll();
+                _pilot.Modules.DisableAll();
             }
 
             GUILayout.Space(10f);

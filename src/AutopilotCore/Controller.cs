@@ -1,20 +1,25 @@
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AutopilotCore
 {
     public class Controller : MonoBehaviour
     {
-        private Vessel _vessel;
-        private ModuleManager _modules;
+        private const float SweepInterval = 0.5f;
+
+        private readonly Dictionary<Guid, VesselPilot> _pilots = new Dictionary<Guid, VesselPilot>();
+        private readonly List<Guid> _stale = new List<Guid>();
         private MainWindow _window;
+        private float _nextSweep;
 
         private void Start()
         {
-            _modules = new ModuleManager();
-            _window = new MainWindow(_modules);
-            AttachVessel(FlightGlobals.ActiveVessel);
+            _window = new MainWindow();
             GameEvents.onVesselChange.Add(OnVesselChange);
+            GameEvents.onVesselWillDestroy.Add(OnVesselWillDestroy);
+            Sweep();
             StartCoroutine(RenderInstrumentsLoop());
         }
 
@@ -27,45 +32,88 @@ namespace AutopilotCore
                 yield return endOfFrame;
                 if (_window != null)
                 {
-                    _window.RenderInstruments(_vessel);
+                    _window.RenderInstruments(ActivePilot());
                 }
             }
         }
 
         private void OnVesselChange(Vessel vessel)
         {
-            AttachVessel(vessel);
+            PilotOf(vessel);
         }
 
-        private void AttachVessel(Vessel vessel)
+        private void OnVesselWillDestroy(Vessel vessel)
         {
-            if (_vessel != null)
+            VesselPilot pilot;
+            if (vessel != null && _pilots.TryGetValue(vessel.id, out pilot))
             {
-                _vessel.OnFlyByWire -= Fly;
-            }
-
-            _vessel = vessel;
-
-            if (_vessel != null)
-            {
-                _vessel.OnFlyByWire += Fly;
+                pilot.Detach();
+                _pilots.Remove(vessel.id);
             }
         }
 
-        private void Fly(FlightCtrlState ctrl)
+        // Event coverage for vessels appearing (load, undock, decouple, launch) is patchy, so new
+        // vessels are picked up by polling.
+        private void Sweep()
         {
-            if (_vessel == null)
+            List<Vessel> vessels = FlightGlobals.Vessels;
+            for (int i = 0; i < vessels.Count; i++)
             {
-                return;
+                Vessel vessel = vessels[i];
+                PhysicsRange.Extend(vessel);
+                if (vessel != null && vessel.loaded)
+                {
+                    PilotOf(vessel);
+                }
             }
 
-            _window.ApplyFlyByWire(_vessel, ctrl);
-            _modules.UpdateAll(_vessel, ctrl);
-            _window.FinishFlyByWire(ctrl);
+            _stale.Clear();
+            foreach (KeyValuePair<Guid, VesselPilot> entry in _pilots)
+            {
+                Vessel vessel = entry.Value.Vessel;
+                if (vessel == null || vessel.id != entry.Key)
+                {
+                    _stale.Add(entry.Key);
+                }
+            }
+
+            for (int i = 0; i < _stale.Count; i++)
+            {
+                _pilots[_stale[i]].Detach();
+                _pilots.Remove(_stale[i]);
+            }
+        }
+
+        private VesselPilot PilotOf(Vessel vessel)
+        {
+            if (vessel == null)
+            {
+                return null;
+            }
+
+            VesselPilot pilot;
+            if (!_pilots.TryGetValue(vessel.id, out pilot))
+            {
+                pilot = new VesselPilot(vessel);
+                _pilots.Add(vessel.id, pilot);
+            }
+
+            return pilot;
+        }
+
+        private VesselPilot ActivePilot()
+        {
+            return PilotOf(FlightGlobals.ActiveVessel);
         }
 
         private void Update()
         {
+            if (Time.unscaledTime >= _nextSweep)
+            {
+                _nextSweep = Time.unscaledTime + SweepInterval;
+                Sweep();
+            }
+
             if (_window != null)
             {
                 _window.PollWaypointPick();
@@ -76,19 +124,20 @@ namespace AutopilotCore
         {
             if (_window != null)
             {
-                _window.Draw(_vessel);
+                _window.Draw(ActivePilot());
             }
         }
 
         private void OnDestroy()
         {
-            if (_vessel != null)
+            foreach (VesselPilot pilot in _pilots.Values)
             {
-                _vessel.OnFlyByWire -= Fly;
-                _vessel = null;
+                pilot.Detach();
             }
 
+            _pilots.Clear();
             GameEvents.onVesselChange.Remove(OnVesselChange);
+            GameEvents.onVesselWillDestroy.Remove(OnVesselWillDestroy);
 
             if (_window != null)
             {

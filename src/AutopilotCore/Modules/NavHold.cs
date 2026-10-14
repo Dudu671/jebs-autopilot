@@ -89,7 +89,7 @@ namespace AutopilotCore
             if (engaging)
             {
                 _holdCourse = current;
-                _recorder.Start();
+                _recorder.Start(vessel);
             }
 
             ctrl.yaw = vessel.GetCoordinationYaw();
