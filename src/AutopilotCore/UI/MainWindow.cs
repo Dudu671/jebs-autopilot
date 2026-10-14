@@ -8,6 +8,7 @@ namespace AutopilotCore
 
         private readonly ModuleManager _modules;
         private readonly FlightTape _tape = new FlightTape();
+        private readonly FlyByWire _flyByWire = new FlyByWire();
         private readonly FlightData _data = new FlightData();
         private readonly PrimaryFlightDisplay _pfd = new PrimaryFlightDisplay();
         private readonly NavigationDisplay _nav;
@@ -42,6 +43,22 @@ namespace AutopilotCore
             }
 
             _mapRoute.Sync(vessel);
+        }
+
+        public void ApplyFlyByWire(Vessel vessel, FlightCtrlState ctrl)
+        {
+            PitchHold pitch = _modules.Find<PitchHold>();
+            AltitudeHold altitude = _modules.Find<AltitudeHold>();
+            HeadingHold heading = _modules.Find<HeadingHold>();
+            NavHold nav = _modules.Find<NavHold>();
+            bool pitchOwned = (pitch != null && pitch.Enabled) || (altitude != null && altitude.Enabled);
+            bool rollOwned = (heading != null && heading.Enabled) || (nav != null && nav.Enabled);
+            _flyByWire.Apply(vessel, ctrl, pitchOwned, rollOwned);
+        }
+
+        public void FinishFlyByWire(FlightCtrlState ctrl)
+        {
+            _flyByWire.ReassertYaw(ctrl);
         }
 
         public void PollWaypointPick()
@@ -107,6 +124,9 @@ namespace AutopilotCore
         private void DrawContents(int id)
         {
             _tape.Draw(_vessel);
+
+            GUILayout.Space(6f);
+            _flyByWire.Enabled = GUILayout.Toggle(_flyByWire.Enabled, "Fly-by-wire", GUI.skin.button);
 
             GUILayout.Space(6f);
             _modules.DrawAllGui();

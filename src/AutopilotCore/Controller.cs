@@ -59,7 +59,9 @@ namespace AutopilotCore
                 return;
             }
 
+            _window.ApplyFlyByWire(_vessel, ctrl);
             _modules.UpdateAll(_vessel, ctrl);
+            _window.FinishFlyByWire(ctrl);
         }
 
         private void Update()
