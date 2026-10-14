@@ -36,21 +36,40 @@ namespace AutopilotCore
             return Math.Asin(Math.Sin(angularAP) * Math.Sin(bearingAP - bearingAB)) * radius;
         }
 
-        // Flat east/north approximation around a reference point; fine within a map view.
+        // Azimuthal equidistant east/north around a reference point: exact distance and bearing from
+        // it, and no distortion blow-up near the poles.
         public static Vector2 LocalOffset(double radius, double latRef, double lonRef, double lat, double lon)
         {
-            double cosLat = Math.Max(0.05, Math.Cos(latRef * ToRad));
-            double east = Mathf.DeltaAngle((float)lonRef, (float)lon) * ToRad * radius * cosLat;
-            double north = (lat - latRef) * ToRad * radius;
-            return new Vector2((float)east, (float)north);
+            double distance = Distance(radius, latRef, lonRef, lat, lon);
+            if (distance < 1e-6)
+            {
+                return Vector2.zero;
+            }
+
+            double bearing = Bearing(latRef, lonRef, lat, lon) * ToRad;
+            return new Vector2((float)(distance * Math.Sin(bearing)), (float)(distance * Math.Cos(bearing)));
         }
 
+        // Inverse of LocalOffset: the point reached from the reference along the offset's bearing and distance.
         public static void FromLocal(double radius, double latRef, double lonRef, double east, double north, out double lat, out double lon)
         {
-            double cosLat = Math.Max(0.05, Math.Cos(latRef * ToRad));
-            lat = Math.Max(-89.9, Math.Min(89.9, latRef + (north / radius * ToDeg)));
-            lon = lonRef + (east / (radius * cosLat) * ToDeg);
-            lon = ((lon + 540.0) % 360.0) - 180.0;
+            double delta = Math.Sqrt((east * east) + (north * north)) / radius;
+            double theta = Math.Atan2(east, north);
+            double phi1 = latRef * ToRad;
+            double sinPhi2 = (Math.Sin(phi1) * Math.Cos(delta)) + (Math.Cos(phi1) * Math.Sin(delta) * Math.Cos(theta));
+            double phi2 = Math.Asin(Math.Max(-1.0, Math.Min(1.0, sinPhi2)));
+            double dLon = Math.Atan2(Math.Sin(theta) * Math.Sin(delta) * Math.Cos(phi1), Math.Cos(delta) - (Math.Sin(phi1) * sinPhi2));
+            lat = phi2 * ToDeg;
+            lon = (((lonRef + (dLon * ToDeg)) + 540.0) % 360.0) - 180.0;
+        }
+
+        // Angle (deg) to add to a direction measured at the reference point's map to get it in the
+        // local north frame at the given point. Zero on a flat map; grows toward the poles.
+        public static float GridConvergence(double latRef, double lonRef, double lat, double lon)
+        {
+            double forward = Bearing(latRef, lonRef, lat, lon);
+            double back = Bearing(lat, lon, latRef, lonRef);
+            return Mathf.DeltaAngle(0f, (float)(back - forward - 180.0));
         }
     }
 }

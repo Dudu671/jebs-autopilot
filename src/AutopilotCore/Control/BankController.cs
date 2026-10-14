@@ -3,67 +3,64 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
-    // Turns a heading error into a smooth, bank-limited roll command.
+    // Turns a heading error into a smooth, bank-limited roll, flown through the fly-by-wire roll-rate loop.
     public sealed class BankController
     {
         public static readonly int[] MaxBankOptions = { 5, 10, 15, 20, 30, 45, 50, 60 };
 
-        private const float DesignIasKt = 110f;
-        private const float DesignRollAuthority = 28f;
+        private const float BankGain = 1.5f;
+        private const float MaxRollRate = 0.35f;
+        private const float RateTau = 0.03f;
 
+        private readonly RateLoop _loop = new RateLoop("Bank", 0.4f, 0.5f, 1f, 3f, 0.08f);
         private bool _active;
         private float _bankCmd;
         private float _bankCmdRate;
-        private float _bankFilt;
-        private float _lastBank;
-        private float _rollRate;
-        private float _integral;
-        private float _stick;
-        private float _authority = DesignRollAuthority;
+        private float _rate;
+        private float _lastTick = float.NegativeInfinity;
 
         public void Reset()
         {
             _active = false;
         }
 
-        public float Step(Vessel vessel, float currentHeading, float targetHeading, float maxBank, float dt)
+        public void Step(Vessel vessel, FlightCtrlState ctrl, float currentHeading, float targetHeading, float maxBank, float dt)
         {
             float headingError = Mathf.DeltaAngle(currentHeading, targetHeading);
-            return StepBank(vessel, maxBank * (float)Math.Tanh(headingError / 22f), maxBank, dt);
+            StepBank(vessel, ctrl, maxBank * (float)Math.Tanh(headingError / 22f), maxBank, dt);
         }
 
         // bankTarget: degrees, positive = right wing down.
-        public float StepBank(Vessel vessel, float bankTarget, float maxBank, float dt)
+        public void StepBank(Vessel vessel, FlightCtrlState ctrl, float bankTarget, float maxBank, float dt)
         {
-            float bank = vessel.GetBank();
-            if (!_active)
+            if (!vessel.TryGetBodyRates(out Vector3 body))
             {
-                Engage(bank);
+                return;
+            }
+
+            float bank = vessel.GetBank();
+            bool resumed = Time.fixedTime - _lastTick > 0.5f;
+            _lastTick = Time.fixedTime;
+            if (!_active || resumed)
+            {
+                _active = true;
+                _bankCmd = bank;
+                _bankCmdRate = 0f;
+                _rate = body.y;
+                _loop.Reset(ctrl.roll);
             }
 
             StepBankCommand(Mathf.Clamp(bankTarget, -maxBank, maxBank), maxBank, dt);
+            _rate = Filter.Blend(_rate, body.y, dt, RateTau);
 
-            _bankFilt = Filter.Blend(_bankFilt, bank, dt, 0.1f);
-            float rawRate = (bank - _lastBank) / dt;
-            _lastBank = bank;
-            _rollRate = Filter.Blend(_rollRate, rawRate, dt, 0.15f);
-
-            float bankError = _bankCmd - _bankFilt;
-            float maxRate = 0.45f * maxBank;
-            float rateCmd = Mathf.Clamp(0.85f * bankError, -maxRate, maxRate);
-            float rateError = rateCmd - _rollRate;
-            if (Mathf.Abs(rateError) < 0.7f)
-            {
-                rateError = 0f;
-            }
-
-            LearnAuthority(dt);
-            float scale = StickScale(vessel.GetIasKt()) * Mathf.Clamp(DesignRollAuthority / _authority, 0.3f, 2.2f);
-
-            _integral = Mathf.Clamp(_integral + (bankError * dt), -6f, 6f);
-            float stickCmd = scale * ((0.022f * rateError) + (0.0012f * _integral));
-            _stick = Filter.Blend(_stick, Mathf.Clamp(stickCmd, -1f, 1f), dt, 0.12f);
-            return _stick;
+            // p = phiDot - psiDot sin(theta), with the shaped command rate fed forward.
+            float pitch = vessel.GetPitch();
+            float speed = (float)vessel.GetAirVelocity().magnitude;
+            float error = Mathf.DeltaAngle(bank, _bankCmd);
+            float phiDot = Mathf.Clamp(((BankGain * error) + _bankCmdRate) * Mathf.Deg2Rad, -MaxRollRate, MaxRollRate);
+            float turnRate = Kinematics.LevelTurnRate(bank, speed, vessel.GetGravity());
+            float command = phiDot - (turnRate * Mathf.Sin(pitch * Mathf.Deg2Rad));
+            ctrl.roll = _loop.Step(command, _rate, vessel.GetDynamicRatio(), 0f, false, dt);
         }
 
         public static int DrawMaxBankSlider(int index)
@@ -73,21 +70,9 @@ namespace AutopilotCore
             return Mathf.RoundToInt(slider);
         }
 
-        private void Engage(float bank)
-        {
-            _active = true;
-            _bankCmd = bank;
-            _bankCmdRate = 0f;
-            _bankFilt = bank;
-            _lastBank = bank;
-            _rollRate = 0f;
-            _integral = 0f;
-            _stick = 0f;
-        }
-
+        // Critically damped, then clamped so the roll-in starts from rest and eases out.
         private void StepBankCommand(float bankTarget, float maxBank, float dt)
         {
-            // Critically damped, then clamped so the roll-in starts from rest and eases out.
             const float wn = 0.9f;
             float maxRate = 0.35f * maxBank;
             float maxAccel = 0.18f * maxBank;
@@ -95,23 +80,6 @@ namespace AutopilotCore
             accel = Mathf.Clamp(accel, -maxAccel, maxAccel);
             _bankCmdRate = Mathf.Clamp(_bankCmdRate + (accel * dt), -maxRate, maxRate);
             _bankCmd = Mathf.Clamp(_bankCmd + (_bankCmdRate * dt), -maxBank, maxBank);
-        }
-
-        private void LearnAuthority(float dt)
-        {
-            if (Mathf.Abs(_stick) < 0.12f || Mathf.Sign(_rollRate) != Mathf.Sign(_stick))
-            {
-                return;
-            }
-
-            float observed = Mathf.Clamp(Mathf.Abs(_rollRate / _stick), 6f, 100f);
-            _authority = Filter.Blend(_authority, observed, dt, 1.5f);
-        }
-
-        private static float StickScale(float iasKt)
-        {
-            float ias = Mathf.Max(iasKt, 45f);
-            return Mathf.Clamp(DesignIasKt / ias, 0.35f, 2f);
         }
     }
 }

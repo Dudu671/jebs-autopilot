@@ -7,7 +7,6 @@ namespace AutopilotCore
     {
         public static float GetPitch(this Vessel vessel)
         {
-            // TODO: validate in flight
             Vector3d forward = vessel.ReferenceTransform.up;
             Vector3d up = vessel.upAxis;
             return (float)(90.0 - Vector3d.Angle(forward, up));
@@ -15,7 +14,6 @@ namespace AutopilotCore
 
         public static float GetHeading(this Vessel vessel)
         {
-            // TODO: validate in flight
             Vector3d up = vessel.upAxis;
             Vector3d north = vessel.north;
             Vector3d east = vessel.east;
@@ -37,7 +35,6 @@ namespace AutopilotCore
 
         public static float GetBank(this Vessel vessel)
         {
-            // TODO: validate in flight
             Vector3d up = vessel.upAxis;
             Vector3d right = vessel.ReferenceTransform.right;
             Vector3d dorsal = -vessel.ReferenceTransform.forward;
@@ -47,7 +44,6 @@ namespace AutopilotCore
 
         public static float GetTrack(this Vessel vessel)
         {
-            // TODO: validate in flight
             Vector3d horiz = Vector3d.Exclude(vessel.upAxis, vessel.GetSrfVelocity());
             if (horiz.sqrMagnitude < 0.25)
             {
@@ -96,8 +92,8 @@ namespace AutopilotCore
             right = (float)(Math.Atan2(Vector3d.Dot(vel, t.right), forward) * toDeg);
         }
 
-        // Positive when the air-relative velocity is right of the nose.
-        public static float GetCoordinationYaw(this Vessel vessel)
+        // Radians, positive with the air from the right of the nose (needs nose-right yaw).
+        public static float GetSideslip(this Vessel vessel)
         {
             Vector3d air = vessel.GetAirVelocity();
             Transform t = vessel.ReferenceTransform;
@@ -107,8 +103,7 @@ namespace AutopilotCore
                 return 0f;
             }
 
-            float beta = (float)(Math.Atan2(Vector3d.Dot(air, t.right), forward) * (180.0 / Math.PI));
-            return Mathf.Clamp(0.02f * beta, -0.35f, 0.35f);
+            return (float)Math.Atan2(Vector3d.Dot(air, t.right), forward);
         }
 
         public static float GetOatC(this Vessel vessel)
@@ -118,7 +113,6 @@ namespace AutopilotCore
 
         public static float GetAltitudeASL(this Vessel vessel)
         {
-            // TODO: validate in flight
             return (float)vessel.altitude;
         }
 
@@ -129,7 +123,6 @@ namespace AutopilotCore
 
         public static float GetVerticalSpeedFpm(this Vessel vessel)
         {
-            // TODO: validate in flight
             return (float)vessel.verticalSpeed * Units.FpmPerMps;
         }
 
@@ -152,13 +145,12 @@ namespace AutopilotCore
 
         public static float GetGsKt(this Vessel vessel)
         {
-            // TODO: validate in flight
             return (float)vessel.horizontalSrfSpeed * Units.KnotsPerMps;
         }
 
+        // Positive with the nose above the airflow; transform.forward points out of the belly.
         public static float GetAoA(this Vessel vessel)
         {
-            // TODO: validate in flight
             Vector3d vel = vessel.GetAirVelocity();
             if (vel.sqrMagnitude < 1e-4)
             {
@@ -166,7 +158,43 @@ namespace AutopilotCore
             }
 
             Vector3d local = vessel.ReferenceTransform.InverseTransformDirection(vel);
-            return (float)(Math.Atan2(-local.z, local.y) * (180.0 / Math.PI));
+            return (float)(Math.Atan2(local.z, local.y) * (180.0 / Math.PI));
+        }
+
+        // rad/s: x = nose up, y = right wing down, z = nose right.
+        // Uses the world-space rigidbody rate; vessel.angularVelocity is already vessel-local.
+        // Unity is left-handed, hence the negations.
+        public static bool TryGetBodyRates(this Vessel vessel, out Vector3 rates)
+        {
+            rates = Vector3.zero;
+            Rigidbody rb = vessel.rootPart != null ? vessel.rootPart.Rigidbody : null;
+            if (rb == null || vessel.ReferenceTransform == null)
+            {
+                return false;
+            }
+
+            Vector3 local = vessel.ReferenceTransform.InverseTransformDirection(rb.angularVelocity);
+            if (float.IsNaN(local.x) || float.IsNaN(local.y) || float.IsNaN(local.z))
+            {
+                return false;
+            }
+
+            rates = new Vector3(-local.x, -local.y, -local.z);
+            return true;
+        }
+
+        // Dynamic pressure relative to sea level at 110 kt.
+        public static float GetDynamicRatio(this Vessel vessel)
+        {
+            const float reference = 0.5f * 1.223f * 56.6f * 56.6f;
+            float speed = Mathf.Max((float)vessel.GetAirVelocity().magnitude, 1f);
+            float density = Mathf.Max((float)vessel.atmDensity, 0f);
+            return Mathf.Clamp(0.5f * density * speed * speed / reference, 0.08f, 5f);
+        }
+
+        public static float GetGravity(this Vessel vessel)
+        {
+            return (float)FlightGlobals.getGeeForceAtPosition(vessel.CoM).magnitude;
         }
 
         // Subsonic pitot conversion so indicated airspeed follows the air mass, not the ground.

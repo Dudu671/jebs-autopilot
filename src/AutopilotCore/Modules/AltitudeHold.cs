@@ -3,38 +3,34 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
-    public sealed class AltitudeHold : IAutopilotModule
+    // Altitude error -> vertical speed -> flight path angle -> pitch attitude.
+    public sealed class AltitudeHold : IVerticalMode
     {
-        private const float CaptureGain = 2f;
-        private const float VsCmdAccelFpmPerSec = 250f;
-        private const float PitchTargetRate = 3f;
-        private const float Kp = 1.0f;
-        private const float Ki = 0.2f;
-        private const float Kd = 0.6f;
-        private const float MinPitch = -15f;
-        private const float MaxPitch = 20f;
+        // Final capture time constant, and the vertical deceleration used to level off without overshoot.
+        private const float CaptureTau = 5f;
+        private const float CaptureAccel = 0.8f;
+        private const float VsSlew = 0.8f;
 
-        private readonly PitchHold _pitchHold = new PitchHold();
+        // Gains tuned in a linear model over 30-250 m/s and slow-to-fast airframes.
+        private const float GammaGain = 1.2f;
+        private const float TrimGain = 0.4f;
+
+        private const float MinPitch = -20f;
+        private const float MaxPitch = 25f;
+        private const float MinSpeed = 20f;
+
+        private readonly PitchControl _pitch = new PitchControl("Altitude hold");
         private readonly FloatField _targetFt = new FloatField(3000f);
         private readonly FloatField _vsLimitFpm = new FloatField(1000f);
         private readonly FlightRecorder _recorder = new FlightRecorder(
             "altitude_hold.csv",
-            "t,alt_ft,vs_fpm,vs_cmd_fpm,fpa,fpa_cmd,fpa_rate,pitch,pitch_target,stick,gain");
+            "t,ias,aoa,alt_ft,target_ft,vs_fpm,vs_cmd_fpm,gamma,gamma_cmd,pitch,pitch_cmd,trim,q_cmd,q,stick,limited");
 
         private bool _active;
         private float _vsCmd;
-        private float _trimPitch;
-        private float _lastFpa;
-        private float _fpaRate;
-        private float _pitchTarget;
-        private float _gainScale = 1f;
-
-        private float _time;
-        private int _lastErrSign;
-        private float _lastCrossTime;
-        private float _peakErr;
-        private int _fastCrossings;
-        private float _sameSignTime;
+        private float _trim;
+        private float _pitchCmd;
+        private float _errorFt;
 
         public string Name
         {
@@ -58,131 +54,76 @@ namespace AutopilotCore
                 }
 
                 _active = false;
-                _pitchHold.Reset();
+                _pitch.Reset();
                 return;
             }
 
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
             float pitch = vessel.GetPitch();
-            float vs = vessel.GetVerticalSpeedFpm();
-            float groundSpeed = Mathf.Max(vessel.GetGroundVelocity().magnitude, 30f);
-            float fpa = FlightPathAngle(vs, groundSpeed);
-
+            float vs = (float)vessel.verticalSpeed;
+            float speed = Mathf.Max((float)vessel.srfSpeed, MinSpeed);
+            float gamma = PathAngle(vs, speed);
             if (!_active)
             {
-                Engage(vessel, pitch, vs, fpa);
+                Engage(vessel, pitch, vs, gamma);
             }
 
-            float limitFpm = Mathf.Max(1f, Mathf.Abs(_vsLimitFpm.Value));
-            float vsWanted = Mathf.Clamp(CaptureGain * (_targetFt.Value - vessel.GetAltitudeAslFt()), -limitFpm, limitFpm);
-            _vsCmd = Mathf.MoveTowards(_vsCmd, vsWanted, VsCmdAccelFpmPerSec * dt);
+            float error = (_targetFt.Value - vessel.GetAltitudeAslFt()) / Units.FeetPerMeter;
+            float distance = Mathf.Abs(error);
+            float limit = Mathf.Max(1f, Mathf.Abs(_vsLimitFpm.Value)) / Units.FpmPerMps;
+            float wanted = Mathf.Sign(error) * Mathf.Min(limit, Mathf.Min(distance / CaptureTau, Mathf.Sqrt(2f * CaptureAccel * distance)));
+            _vsCmd = Mathf.MoveTowards(_vsCmd, wanted, VsSlew * dt);
+            _errorFt = error * Units.FeetPerMeter;
 
-            _fpaRate = Filter.Blend(_fpaRate, (fpa - _lastFpa) / dt, dt, 0.4f);
-            _lastFpa = fpa;
+            float gammaCmd = PathAngle(_vsCmd, speed);
+            float gammaError = (_vsCmd - vs) / speed * Mathf.Rad2Deg;
+            float unclamped = gammaCmd + (GammaGain * gammaError) + _trim;
+            _pitchCmd = Mathf.Clamp(unclamped, MinPitch, MaxPitch);
 
-            float fpaCmd = FlightPathAngle(_vsCmd, groundSpeed);
-            float fpaError = fpaCmd - fpa;
-            Adapt(fpaError, dt);
-
-            float g = _gainScale;
-            // Integrate only while the pitch loop can follow, so the trim does not wind up.
-            bool tracking = Mathf.Abs(_pitchTarget - pitch) < 4f;
-            if (tracking)
+            // Anti-windup: the trim holds while the pitch command is clipped or the envelope cuts it.
+            bool clipped = (unclamped > MaxPitch && gammaError > 0f) || (unclamped < MinPitch && gammaError < 0f);
+            if (!clipped && !_pitch.Limited)
             {
-                _trimPitch = Mathf.Clamp(_trimPitch + (g * Ki * fpaError * dt), MinPitch, MaxPitch);
+                _trim = Mathf.Clamp(_trim + (TrimGain * gammaError * dt), MinPitch, MaxPitch);
             }
 
-            float wanted = _trimPitch + (g * ((Kp * fpaError) - (Kd * _fpaRate)));
-            wanted = Mathf.Clamp(wanted, MinPitch, MaxPitch);
-            _pitchTarget = Mathf.MoveTowards(_pitchTarget, wanted, PitchTargetRate * dt);
-
-            _pitchHold.Apply(vessel, ctrl, _pitchTarget);
+            _pitch.Step(vessel, ctrl, _pitchCmd, dt);
 
             if (_recorder.Tick(dt))
             {
-                _recorder.Record(vessel.GetAltitudeAslFt(), vs, _vsCmd, fpa, fpaCmd, _fpaRate,
-                    pitch, _pitchTarget, ctrl.pitch, _gainScale);
+                _recorder.Record(vessel.GetIasKt(), vessel.GetAoA(), vessel.GetAltitudeAslFt(), _targetFt.Value,
+                    vs * Units.FpmPerMps, _vsCmd * Units.FpmPerMps, gamma, gammaCmd, pitch, _pitchCmd, _trim,
+                    _pitch.RateCommand * Mathf.Rad2Deg, _pitch.Rate * Mathf.Rad2Deg, ctrl.pitch, _pitch.Limited ? 1f : 0f);
             }
         }
 
         public void DrawGui()
         {
-            Enabled = GUILayout.Toggle(Enabled, Name);
+            Enabled = GUILayout.Toggle(Enabled, Name, GuiStyles.Toggle);
             GUILayout.BeginHorizontal();
             _targetFt.Draw("ALT (ft)", 58f);
             _vsLimitFpm.Draw("VS limit (fpm)", 88f);
             GUILayout.EndHorizontal();
             if (_active)
             {
-                GUILayout.Label("VS cmd " + _vsCmd.ToString("F0") + " fpm   pitch tgt " +
-                                _pitchTarget.ToString("F1") + "   gain " + _gainScale.ToString("F2"));
+                GUILayout.Label("Error " + _errorFt.ToString("+0;-0") + " ft   VS cmd " + (_vsCmd * Units.FpmPerMps).ToString("F0") +
+                                " fpm   pitch tgt " + _pitchCmd.ToString("F1") + (_pitch.Limited ? "   AOA/G LIMIT" : ""));
             }
         }
 
-        private void Engage(Vessel vessel, float pitch, float vs, float fpa)
+        private void Engage(Vessel vessel, float pitch, float vs, float gamma)
         {
             _active = true;
             _vsCmd = vs;
-            _trimPitch = pitch;
-            _lastFpa = fpa;
-            _fpaRate = 0f;
-            _pitchTarget = pitch;
-            _time = 0f;
-            _lastErrSign = 0;
-            _lastCrossTime = 0f;
-            _peakErr = 0f;
-            _fastCrossings = 0;
-            _sameSignTime = 0f;
-            _pitchHold.Reset();
+            _trim = pitch - gamma;
+            _pitchCmd = pitch;
+            _pitch.Reset();
             _recorder.Start(vessel);
         }
 
-        private void Adapt(float fpaError, float dt)
+        private static float PathAngle(float vs, float speed)
         {
-            const float Hysteresis = 0.15f;
-            _time += dt;
-            _peakErr = Mathf.Max(_peakErr, Mathf.Abs(fpaError));
-
-            int sign = fpaError > Hysteresis ? 1 : (fpaError < -Hysteresis ? -1 : 0);
-            if (sign == 0)
-            {
-                _sameSignTime = 0f;
-                return;
-            }
-
-            if (_lastErrSign != 0 && sign != _lastErrSign)
-            {
-                // Two quick, sizeable reversals in a row mean the loop is oscillating.
-                bool fast = (_time - _lastCrossTime) < 20f && _peakErr > 0.4f;
-                _fastCrossings = fast ? _fastCrossings + 1 : 0;
-                if (_fastCrossings >= 2)
-                {
-                    _gainScale = Mathf.Max(0.3f, _gainScale * 0.85f);
-                    _fastCrossings = 0;
-                }
-
-                _lastCrossTime = _time;
-                _peakErr = 0f;
-                _sameSignTime = 0f;
-            }
-            else
-            {
-                _sameSignTime += dt;
-                if (_sameSignTime > 15f && Mathf.Abs(fpaError) > 0.3f)
-                {
-                    _gainScale = Mathf.Min(2f, _gainScale * 1.05f);
-                    _sameSignTime = 10f;
-                }
-            }
-
-            _lastErrSign = sign;
-        }
-
-        private static float FlightPathAngle(float vsFpm, float tasMps)
-        {
-            float vsMps = vsFpm / Units.FpmPerMps;
-            float sin = Mathf.Clamp(vsMps / tasMps, -1f, 1f);
-            return (float)(Math.Asin(sin) * (180.0 / Math.PI));
+            return (float)(Math.Asin(Mathf.Clamp(vs / speed, -1f, 1f)) * (180.0 / Math.PI));
         }
     }
 }

@@ -75,18 +75,26 @@ namespace AutopilotCore
                 IAutopilotModule module = _modules[i];
                 bool wasEnabled = module.Enabled;
                 module.DrawGui();
-                if (!wasEnabled && module.Enabled && module is ILateralMode)
+                if (!wasEnabled && module.Enabled)
                 {
-                    DisableOtherLateralModes(module);
+                    if (module is ILateralMode)
+                    {
+                        DisableOthers<ILateralMode>(module);
+                    }
+
+                    if (module is IVerticalMode)
+                    {
+                        DisableOthers<IVerticalMode>(module);
+                    }
                 }
             }
         }
 
-        private void DisableOtherLateralModes(IAutopilotModule keep)
+        private void DisableOthers<T>(IAutopilotModule keep) where T : class, IAutopilotModule
         {
             for (int i = 0; i < _modules.Count; i++)
             {
-                if (_modules[i] != keep && _modules[i] is ILateralMode)
+                if (_modules[i] != keep && _modules[i] is T)
                 {
                     _modules[i].Enabled = false;
                 }

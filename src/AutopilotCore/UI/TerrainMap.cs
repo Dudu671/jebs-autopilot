@@ -4,20 +4,26 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
-    // Monochrome terrain map around a point, sampled incrementally so map rebuilds never stall a frame.
+    // Terrain map around a point in surface colors with relief shading, sampled incrementally so
+    // map rebuilds never stall a frame. Azimuthal equidistant around the center, so it holds up at the poles.
     public sealed class TerrainMap
     {
         private const int Size = 256;
         private const float RecenterFraction = 0.3f;
+        private const float Relief = 3f;
+        private const float Dim = 0.8f;
 
         private readonly float[] _heights = new float[Size * Size];
+        private readonly Color32[] _colors = new Color32[Size * Size];
         private readonly Color32[] _pixels = new Color32[Size * Size];
+        private readonly SurfaceColors _surface = new SurfaceColors();
         private readonly Stopwatch _stopwatch = new Stopwatch();
         private Texture2D _texture;
 
         private bool _building;
         private int _next;
         private CelestialBody _buildBody;
+        private bool _hasColors;
         private double _buildLat;
         private double _buildLon;
         private float _buildHalf;
@@ -58,6 +64,7 @@ namespace AutopilotCore
                 _buildLat = lat;
                 _buildLon = lon;
                 _buildHalf = halfSizeM;
+                _hasColors = _surface.Prepare(body);
             }
 
             if (_building)
@@ -80,6 +87,7 @@ namespace AutopilotCore
                 _texture = null;
             }
 
+            _surface.Dispose();
             HasMap = false;
         }
 
@@ -112,9 +120,7 @@ namespace AutopilotCore
 
             int total = Size * Size;
             double radius = _buildBody.Radius;
-            double cosLat = Math.Max(0.05, Math.Cos(_buildLat * Mathf.Deg2Rad));
             bool hasTerrain = _buildBody.pqsController != null;
-            const double toDeg = 180.0 / Math.PI;
 
             while (_next < total)
             {
@@ -122,9 +128,15 @@ namespace AutopilotCore
                 int j = _next / Size;
                 double east = (-1.0 + ((i + 0.5) * 2.0 / Size)) * _buildHalf;
                 double north = (-1.0 + ((j + 0.5) * 2.0 / Size)) * _buildHalf;
-                double lat = Math.Max(-89.9, Math.Min(89.9, _buildLat + (north / radius * toDeg)));
-                double lon = _buildLon + (east / (radius * cosLat) * toDeg);
+                double lat;
+                double lon;
+                NavMath.FromLocal(radius, _buildLat, _buildLon, east, north, out lat, out lon);
                 _heights[_next] = hasTerrain ? (float)SampleHeight(_buildBody, lat, lon) : 0f;
+                if (_hasColors)
+                {
+                    _colors[_next] = _surface.Sample(lat, lon);
+                }
+
                 _next++;
 
                 if ((_next & 31) == 0 && _stopwatch.Elapsed.TotalMilliseconds > budgetMs)
@@ -139,26 +151,16 @@ namespace AutopilotCore
         private void Finish()
         {
             bool ocean = _buildBody.ocean;
+            float cell = 2f * _buildHalf / Size;
             for (int j = 0; j < Size; j++)
             {
                 for (int i = 0; i < Size; i++)
                 {
                     int idx = (j * Size) + i;
                     float h = _heights[idx];
-                    if (ocean && h <= 0f)
-                    {
-                        _pixels[idx] = new Color32(0, 24, 12, 255);
-                        continue;
-                    }
-
-                    if (ocean && IsCoast(i, j))
-                    {
-                        _pixels[idx] = new Color32(120, 255, 150, 255);
-                        continue;
-                    }
-
-                    float k = 0.2f + (0.55f * Mathf.Sqrt(Mathf.Clamp01(h / 4000f)));
-                    _pixels[idx] = new Color32((byte)(k * 60f), (byte)(k * 255f), (byte)(k * 100f), 255);
+                    bool water = ocean && h <= 0f;
+                    float shade = water ? 1f : Shade(i, j, cell);
+                    _pixels[idx] = _hasColors ? Tint(_colors[idx], shade * Dim) : Fallback(h, water, ocean && IsCoast(i, j), shade);
                 }
             }
 
@@ -179,6 +181,50 @@ namespace AutopilotCore
             HalfSizeM = _buildHalf;
             HasMap = true;
             _building = false;
+        }
+
+        // Lambert shading with light from the northwest, relative to flat ground (1 = flat), relief exaggerated.
+        private float Shade(int i, int j, float cell)
+        {
+            float dzdx = (Height(i + 1, j) - Height(i - 1, j)) / (2f * cell) * Relief;
+            float dzdy = (Height(i, j + 1) - Height(i, j - 1)) / (2f * cell) * Relief;
+            Vector3 normal = new Vector3(-dzdx, -dzdy, 1f).normalized;
+            Vector3 light = new Vector3(-1f, 1f, 1.4f).normalized;
+            return Mathf.Clamp(Vector3.Dot(normal, light) / light.z, 0.45f, 1.5f);
+        }
+
+        private float Height(int i, int j)
+        {
+            i = Mathf.Clamp(i, 0, Size - 1);
+            j = Mathf.Clamp(j, 0, Size - 1);
+            return Mathf.Max(0f, _heights[(j * Size) + i]);
+        }
+
+        private static Color32 Tint(Color32 color, float k)
+        {
+            return new Color32(Scale(color.r, k), Scale(color.g, k), Scale(color.b, k), 255);
+        }
+
+        private static byte Scale(byte channel, float k)
+        {
+            return (byte)Mathf.Clamp(channel * k, 0f, 255f);
+        }
+
+        // Green phosphor palette, for bodies whose surface texture cannot be read.
+        private static Color32 Fallback(float h, bool water, bool coast, float shade)
+        {
+            if (water)
+            {
+                return new Color32(0, 24, 12, 255);
+            }
+
+            if (coast)
+            {
+                return new Color32(120, 255, 150, 255);
+            }
+
+            float k = (0.2f + (0.55f * Mathf.Sqrt(Mathf.Clamp01(h / 4000f)))) * shade;
+            return new Color32(Scale(60, k), Scale(255, k), Scale(100, k), 255);
         }
 
         // GetSurfaceHeight still answers in map view, when TerrainAltitude can collapse to sea level.

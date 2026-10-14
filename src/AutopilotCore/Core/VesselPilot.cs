@@ -5,15 +5,11 @@ namespace AutopilotCore
     {
         private readonly ModuleManager _modules = new ModuleManager();
         private readonly FlyByWire _flyByWire = new FlyByWire();
-        private readonly PitchHold _pitch;
-        private readonly AltitudeHold _altitude;
         private readonly NavHold _nav;
         private Vessel _vessel;
 
         public VesselPilot(Vessel vessel)
         {
-            _pitch = _modules.Find<PitchHold>();
-            _altitude = _modules.Find<AltitudeHold>();
             _nav = _modules.Find<NavHold>();
             _vessel = vessel;
             _vessel.OnFlyByWire += Fly;
@@ -55,7 +51,7 @@ namespace AutopilotCore
                 return;
             }
 
-            bool pitchOwned = (_pitch != null && _pitch.Enabled) || (_altitude != null && _altitude.Enabled);
+            bool pitchOwned = _modules.AnyEnabled<IVerticalMode>();
             bool rollOwned = _modules.AnyEnabled<ILateralMode>();
 
             // Off the active vessel ctrl still holds last frame's output, not pilot input.

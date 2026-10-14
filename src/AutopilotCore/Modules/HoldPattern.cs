@@ -6,7 +6,6 @@ namespace AutopilotCore
     // starts tangent to the current track.
     public sealed class HoldPattern : ILateralMode
     {
-        private const float Gravity = 9.81f;
         private const float MinGuidanceSpeed = 10f;
         private const float MinRadiusM = 100f;
         private const float MinLookahead = 300f;
@@ -16,6 +15,7 @@ namespace AutopilotCore
         private static readonly string[] Directions = { "Left", "Right" };
 
         private readonly BankController _bank = new BankController();
+        private readonly YawControl _yaw = new YawControl("Hold yaw");
         private readonly FloatField _radiusKm = new FloatField(3f);
         private int _maxBankIndex = 4;
         private int _direction = Right;
@@ -61,6 +61,7 @@ namespace AutopilotCore
             {
                 _active = false;
                 _bank.Reset();
+                _yaw.Release();
                 return;
             }
 
@@ -69,6 +70,7 @@ namespace AutopilotCore
             float sign = _direction == Right ? 1f : -1f;
             double bodyRadius = vessel.mainBody.Radius;
             float groundSpeed = vessel.GetGroundVelocity().magnitude;
+            float gravity = Mathf.Max(vessel.GetGravity(), 0.1f);
             float track = groundSpeed > MinGuidanceSpeed ? vessel.GetTrack() : vessel.GetHeading();
             _radiusM = Mathf.Max(_radiusKm.Value * 1000f, MinRadiusM);
 
@@ -91,21 +93,21 @@ namespace AutopilotCore
 
             // Steady-turn bank for this radius, faded out while still far from the circle.
             float onCircle = Mathf.Clamp01(1f - (Mathf.Abs(radialError) / (2f * lookahead)));
-            float turnBank = sign * Mathf.Atan(groundSpeed * groundSpeed / (Gravity * _radiusM)) * Mathf.Rad2Deg;
+            float turnBank = sign * Mathf.Atan(groundSpeed * groundSpeed / (gravity * _radiusM)) * Mathf.Rad2Deg;
             float trackError = Mathf.DeltaAngle(track, _desiredTrack);
             float bankTarget = (onCircle * turnBank) + (maxBank * Tanh(trackError / 22f));
-            _minTurnRadiusM = groundSpeed * groundSpeed / (Gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad));
+            _minTurnRadiusM = groundSpeed * groundSpeed / (gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad));
 
-            ctrl.yaw = vessel.GetCoordinationYaw();
-            ctrl.roll = _bank.StepBank(vessel, bankTarget, maxBank, dt);
+            _bank.StepBank(vessel, ctrl, bankTarget, maxBank, dt);
+            _yaw.Coordinate(vessel, ctrl, dt);
         }
 
         public void DrawGui()
         {
-            Enabled = GUILayout.Toggle(Enabled, Name);
+            Enabled = GUILayout.Toggle(Enabled, Name, GuiStyles.Toggle);
             GUILayout.BeginHorizontal();
             GUILayout.Label("Turn", GUILayout.Width(110f));
-            _direction = GUILayout.Toolbar(_direction, Directions);
+            _direction = GUILayout.Toolbar(_direction, Directions, GuiStyles.ToggleButton);
             GUILayout.EndHorizontal();
             _radiusKm.Draw("Radius (km)");
             _maxBankIndex = BankController.DrawMaxBankSlider(_maxBankIndex);

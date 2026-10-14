@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace AutopilotCore
 {
@@ -9,6 +10,8 @@ namespace AutopilotCore
         private const float MapBudgetMs = 4f;
         // Map covers more than the ring so the corners stay filled when heading-up rotates it.
         private const float MapCoverage = 1.5f;
+        private const int ScrollAfter = 10;
+        private const float ScrollHeight = 420f;
 
         private static readonly float[] RangesKm = { 5f, 10f, 20f, 50f, 100f, 200f, 500f };
         private static readonly string[] CompassLabels = { "N", "3", "6", "E", "12", "15", "S", "21", "24", "W", "30", "33" };
@@ -26,6 +29,7 @@ namespace AutopilotCore
         private readonly TerrainMap _map = new TerrainMap();
         private NavHold _nav;
         private NavPlan _plan;
+        private Vector2 _listScroll;
         private int _rangeIndex = 3;
         private bool _headingUp = true;
         private bool _addMode;
@@ -128,7 +132,7 @@ namespace AutopilotCore
             }
 
             GUILayout.FlexibleSpace();
-            _headingUp = GUILayout.Toggle(_headingUp, "Heading up");
+            _headingUp = GUILayout.Toggle(_headingUp, "Heading up", GuiStyles.Toggle);
             GUILayout.EndHorizontal();
 
             if (_plan != null)
@@ -138,20 +142,21 @@ namespace AutopilotCore
         }
 
         // Picks a surface point on the vessel's planet. The 2D map only displays the route.
-        public void PollMapClick(Vessel vessel, Func<Vector2, bool> mouseOverGui)
+        public void PollMapClick(Vessel vessel, bool mouseOverGui)
         {
             if (!_addMode || _plan == null || vessel == null || !MapView.MapIsEnabled)
             {
                 return;
             }
 
-            if (!Input.GetMouseButtonDown(0) || mouseOverGui == null)
+            if (!Input.GetMouseButtonDown(0) || mouseOverGui)
             {
                 return;
             }
 
-            Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-            if (mouseOverGui(guiMouse))
+            // Stock UI (toolbar, navball, map controls) sits on the uGUI event system.
+            EventSystem events = EventSystem.current;
+            if (events != null && events.IsPointerOverGameObject())
             {
                 return;
             }
@@ -268,7 +273,7 @@ namespace AutopilotCore
         {
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
-            bool add = GUILayout.Toggle(_addMode, "Add waypoints", GUI.skin.button);
+            bool add = GUILayout.Toggle(_addMode, "Add waypoints", GuiStyles.ToggleButton);
             if (add != _addMode)
             {
                 _addMode = add;
@@ -287,6 +292,12 @@ namespace AutopilotCore
             if (_hasView)
             {
                 UpdateRouteDistances();
+            }
+
+            bool scrolling = _plan.Count > ScrollAfter;
+            if (scrolling)
+            {
+                _listScroll = GUILayout.BeginScrollView(_listScroll, GUILayout.Height(ScrollHeight));
             }
 
             for (int i = 0; i < _plan.Count; i++)
@@ -315,6 +326,11 @@ namespace AutopilotCore
                 }
 
                 GUILayout.EndHorizontal();
+            }
+
+            if (scrolling)
+            {
+                GUILayout.EndScrollView();
             }
         }
 
@@ -423,11 +439,18 @@ namespace AutopilotCore
                 return;
             }
 
+            // The map's north is the north at its own center; near the poles that differs from the aircraft's.
             Vector2 offset = _map.OffsetMeters(d.Latitude, d.Longitude);
+            float angle = rot;
+            if (offset.sqrMagnitude > 1f)
+            {
+                angle += NavMath.GridConvergence(_map.CenterLat, _map.CenterLon, d.Latitude, d.Longitude);
+            }
+
             Vector2 local = new Vector2(-offset.x * pxPerM, offset.y * pxPerM);
-            Vector2 center = AircraftPos + Canvas2D.Rotate(local, rot);
+            Vector2 center = AircraftPos + Canvas2D.Rotate(local, angle);
             float size = 2f * _map.HalfSizeM * pxPerM;
-            c.DrawTexture(_map.Texture, center, new Vector2(size, size), rot, Color.white);
+            c.DrawTexture(_map.Texture, center, new Vector2(size, size), angle, Color.white);
         }
 
         private static void DrawCompassRing(Canvas2D c, float rot)

@@ -12,11 +12,12 @@ namespace AutopilotCore
         private const float MinL1 = 300f;
         private const float MinCaptureM = 150f;
         private const float MinGuidanceSpeed = 10f;
-        private const float Gravity = 9.81f;
+
         // Heading error (rad) at which the guidance reaches max bank.
         private const float LinearEta = 0.5f;
 
         private readonly BankController _bank = new BankController();
+        private readonly YawControl _yaw = new YawControl("Nav yaw");
         private readonly FlightRecorder _recorder = new FlightRecorder(
             "nav_hold.csv",
             "t,dist_m,xtrack_m,desired_trk,track,hdg_cmd,hdg,crab,l1_m,bank,gs_mps");
@@ -33,6 +34,7 @@ namespace AutopilotCore
         private float _holdCourse;
         private float _distanceM;
         private float _desiredCourse;
+        private float _gravity;
 
         public string Name
         {
@@ -77,6 +79,7 @@ namespace AutopilotCore
 
                 _active = false;
                 _bank.Reset();
+                _yaw.Release();
                 return;
             }
 
@@ -84,6 +87,7 @@ namespace AutopilotCore
             _active = true;
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
             float maxBank = BankController.MaxBankOptions[_maxBankIndex];
+            _gravity = Mathf.Max(vessel.GetGravity(), 0.1f);
             Vector2 groundVel = vessel.GetGroundVelocity();
             float current = groundVel.magnitude > MinGuidanceSpeed ? vessel.GetTrack() : vessel.GetHeading();
             if (engaging)
@@ -92,23 +96,23 @@ namespace AutopilotCore
                 _recorder.Start(vessel);
             }
 
-            ctrl.yaw = vessel.GetCoordinationYaw();
+            _yaw.Coordinate(vessel, ctrl, dt);
             if (_plan.HasActive && groundVel.magnitude > MinGuidanceSpeed)
             {
-                float headingTarget = GuideToActive(vessel, groundVel, maxBank, engaging);
-                ctrl.roll = _bank.Step(vessel, vessel.GetHeading(), headingTarget, maxBank, dt);
+                float headingTarget = GuideToActive(vessel, groundVel, maxBank, engaging, dt);
+                _bank.Step(vessel, ctrl, vessel.GetHeading(), headingTarget, maxBank, dt);
                 return;
             }
 
             _desiredCourse = _plan.HasActive
                 ? (float)NavMath.Bearing(vessel.latitude, vessel.longitude, _plan.Active.Latitude, _plan.Active.Longitude)
                 : _holdCourse;
-            ctrl.roll = _bank.Step(vessel, current, _desiredCourse, maxBank, dt);
+            _bank.Step(vessel, ctrl, current, _desiredCourse, maxBank, dt);
         }
 
         public void DrawGui()
         {
-            Enabled = GUILayout.Toggle(Enabled, Name);
+            Enabled = GUILayout.Toggle(Enabled, Name, GuiStyles.Toggle);
             if (_plan.Count == 0)
             {
                 GUILayout.Label("No waypoints. Add them on the Navigation Display.");
@@ -131,7 +135,7 @@ namespace AutopilotCore
         }
 
         // Heading to fly so the ground track converges on the leg.
-        private float GuideToActive(Vessel vessel, Vector2 groundVel, float maxBank, bool engaging)
+        private float GuideToActive(Vessel vessel, Vector2 groundVel, float maxBank, bool engaging, float dt)
         {
             double radius = vessel.mainBody.Radius;
             double lat = vessel.latitude;
@@ -154,6 +158,10 @@ namespace AutopilotCore
             if (DistanceToGo(radius, lat, lon, wp) < CaptureDistance(wp, airSpeed, maxBank))
             {
                 _plan.Advance();
+                if (!_plan.HasActive)
+                {
+                    _holdCourse = legCourse;
+                }
             }
 
             float courseRad = legCourse * Mathf.Deg2Rad;
@@ -163,7 +171,7 @@ namespace AutopilotCore
             // L1 must scale with the turn radius: shorter than that, small errors already demand more
             // than max bank and the command saturates left and right in a limit cycle.
             float gain = 4f * L1Damping * L1Damping;
-            float maxLateralAccel = Gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad);
+            float maxLateralAccel = _gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad);
             float l1ForBank = gain * airSpeed * airSpeed * Mathf.Sin(LinearEta) / maxLateralAccel;
             float l1 = Mathf.Max(MinL1, Mathf.Max(L1Damping * L1Period * groundSpeed / Mathf.PI, l1ForBank));
             float offset = Mathf.Clamp(crossTrack, -0.9f * l1, 0.9f * l1);
@@ -178,7 +186,7 @@ namespace AutopilotCore
             float crab = Mathf.Asin(Mathf.Clamp(windRight / Mathf.Max(airSpeed, 1f), -0.85f, 0.85f)) * Mathf.Rad2Deg;
             float headingTarget = Mathf.Repeat(desiredTrack - crab, 360f);
 
-            if (_recorder.Tick(Time.fixedDeltaTime))
+            if (_recorder.Tick(dt))
             {
                 _recorder.Record(_distanceM, crossTrack, desiredTrack, vessel.GetTrack(), headingTarget,
                     vessel.GetHeading(), crab, l1, vessel.GetBank(), groundSpeed);
@@ -246,7 +254,7 @@ namespace AutopilotCore
             Waypoint nextWp = _plan[next];
             float nextCourse = (float)NavMath.Bearing(wp.Latitude, wp.Longitude, nextWp.Latitude, nextWp.Longitude);
             float turn = Mathf.Min(Mathf.Abs(Mathf.DeltaAngle(ArrivalCourse(wp), nextCourse)), 120f);
-            float turnRadius = (speed * speed) / (Gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad));
+            float turnRadius = (speed * speed) / (_gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad));
             float lead = turnRadius * Mathf.Tan(turn * 0.5f * Mathf.Deg2Rad);
             return Mathf.Max(MinCaptureM, lead);
         }

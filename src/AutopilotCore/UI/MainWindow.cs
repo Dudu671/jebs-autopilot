@@ -16,11 +16,16 @@ namespace AutopilotCore
         private readonly InstrumentWindow[] _instruments;
         private Rect _rect = new Rect(40f, 80f, 380f, 0f);
         private VesselPilot _pilot;
+        private bool _collapsed;
+        private bool _mouseOverGui;
 
         public MainWindow()
         {
             _instruments = new InstrumentWindow[] { _pfd, _nav, _gyro };
         }
+
+        // Toggled from the toolbar; the instrument windows keep their own switches.
+        public bool Visible { get; set; }
 
         public void Draw(VesselPilot pilot)
         {
@@ -30,13 +35,16 @@ namespace AutopilotCore
                 return;
             }
 
-            // Shrinking only on Layout keeps the size stable across mouse events, which caused flicker.
-            if (Event.current.type == EventType.Layout)
+            if (Visible)
             {
-                _rect.height = 0f;
-            }
+                // Shrinking only on Layout keeps the size stable across mouse events, which caused flicker.
+                if (Event.current.type == EventType.Layout)
+                {
+                    _rect.height = 0f;
+                }
 
-            _rect = GUILayout.Window(WindowId, _rect, DrawContents, WindowTitle(), GUILayout.Width(380f));
+                _rect = GUILayout.Window(WindowId, _rect, DrawContents, "Jeb's Autopilot", GUILayout.Width(380f));
+            }
 
             for (int i = 0; i < _instruments.Length; i++)
             {
@@ -44,13 +52,19 @@ namespace AutopilotCore
             }
 
             _mapRoute.Sync(_pilot.Vessel, _pilot.Nav);
+
+            // Tested in GUI space against the final window rects; Update has neither.
+            if (Event.current.type == EventType.Repaint)
+            {
+                _mouseOverGui = MouseOverWindow(Event.current.mousePosition);
+            }
         }
 
         public void PollWaypointPick()
         {
             if (_pilot != null)
             {
-                _nav.PollMapClick(_pilot.Vessel, MouseOverWindow);
+                _nav.PollMapClick(_pilot.Vessel, _mouseOverGui);
             }
         }
 
@@ -67,7 +81,7 @@ namespace AutopilotCore
 
         private bool MouseOverWindow(Vector2 guiMouse)
         {
-            if (_rect.height > 1f && _rect.Contains(guiMouse))
+            if (Visible && _rect.height > 1f && _rect.Contains(guiMouse))
             {
                 return true;
             }
@@ -115,18 +129,22 @@ namespace AutopilotCore
             _mapRoute.Dispose();
         }
 
-        private static string WindowTitle()
-        {
-            System.Version version = typeof(MainWindow).Assembly.GetName().Version;
-            return "Jeb's Autopilot  " + version;
-        }
-
         private void DrawContents(int id)
         {
+            if (GUI.Button(new Rect(_rect.width - 26f, 3f, 20f, 16f), _collapsed ? "+" : "-"))
+            {
+                _collapsed = !_collapsed;
+            }
+
             _tape.Draw(_pilot.Vessel);
+            if (_collapsed)
+            {
+                GUI.DragWindow(new Rect(0f, 0f, 10000f, 20f));
+                return;
+            }
 
             Divider.Draw();
-            _pilot.FlyByWire.Enabled = GUILayout.Toggle(_pilot.FlyByWire.Enabled, "Fly-by-wire", GUI.skin.button);
+            _pilot.FlyByWire.DrawGui();
 
             Divider.Draw();
             _pilot.Modules.DrawAllGui();
@@ -141,9 +159,9 @@ namespace AutopilotCore
             GUILayout.BeginVertical(GUI.skin.box);
             GUILayout.Label("Instruments");
             GUILayout.BeginHorizontal();
-            _pfd.Visible = GUILayout.Toggle(_pfd.Visible, "PFD", GUI.skin.button);
-            _nav.Visible = GUILayout.Toggle(_nav.Visible, "Nav display", GUI.skin.button);
-            _gyro.Visible = GUILayout.Toggle(_gyro.Visible, "Directional gyro", GUI.skin.button);
+            _pfd.Visible = GUILayout.Toggle(_pfd.Visible, "PFD", GuiStyles.ToggleButton);
+            _nav.Visible = GUILayout.Toggle(_nav.Visible, "Nav display", GuiStyles.ToggleButton);
+            _gyro.Visible = GUILayout.Toggle(_gyro.Visible, "Directional gyro", GuiStyles.ToggleButton);
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
 

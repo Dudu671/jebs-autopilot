@@ -12,11 +12,13 @@ namespace AutopilotCore
         private readonly Dictionary<Guid, VesselPilot> _pilots = new Dictionary<Guid, VesselPilot>();
         private readonly List<Guid> _stale = new List<Guid>();
         private MainWindow _window;
+        private ToolbarButton _toolbar;
         private float _nextSweep;
 
         private void Start()
         {
             _window = new MainWindow();
+            _toolbar = new ToolbarButton(visible => _window.Visible = visible);
             GameEvents.onVesselChange.Add(OnVesselChange);
             GameEvents.onVesselWillDestroy.Add(OnVesselWillDestroy);
             Sweep();
@@ -138,6 +140,12 @@ namespace AutopilotCore
             _pilots.Clear();
             GameEvents.onVesselChange.Remove(OnVesselChange);
             GameEvents.onVesselWillDestroy.Remove(OnVesselWillDestroy);
+
+            if (_toolbar != null)
+            {
+                _toolbar.Dispose();
+                _toolbar = null;
+            }
 
             if (_window != null)
             {
