@@ -125,13 +125,13 @@ namespace AutopilotCore
         {
             _tape.Draw(_pilot.Vessel);
 
-            GUILayout.Space(6f);
+            Divider.Draw();
             _pilot.FlyByWire.Enabled = GUILayout.Toggle(_pilot.FlyByWire.Enabled, "Fly-by-wire", GUI.skin.button);
 
-            GUILayout.Space(6f);
+            Divider.Draw();
             _pilot.Modules.DrawAllGui();
 
-            GUILayout.Space(8f);
+            Divider.Draw();
             if (GUILayout.Button("Disable all"))
             {
                 _pilot.Modules.DisableAll();

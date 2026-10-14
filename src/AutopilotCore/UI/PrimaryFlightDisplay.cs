@@ -373,6 +373,10 @@ namespace AutopilotCore
             {
                 DrawFmaCell(c, 1, true, "NAV", d.NavLabel);
             }
+            else if (d.HoldOn)
+            {
+                DrawFmaCell(c, 1, true, "HLD", d.HoldLabel);
+            }
             else
             {
                 DrawFmaCell(c, 1, d.HeadingOn, "HDG", Format.Heading(d.HeadingTarget));

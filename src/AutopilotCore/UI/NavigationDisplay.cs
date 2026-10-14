@@ -81,6 +81,10 @@ namespace AutopilotCore
             DrawTrackLine(c, d, rot);
             DrawHeadingBug(c, d, rot);
             DrawRoute(c);
+            if (d.HasOrbit && _hasView)
+            {
+                c.Circle(ToScreen(d.OrbitLat, d.OrbitLon), d.OrbitRadiusM * _viewPxPerM, 2f, Magenta);
+            }
             Vector2 half = Canvas2D.Polar(AircraftPos, RingRadius * 0.5f, -45f);
             c.Text(FormatRange(rangeKm * 0.5f), half.x - 6f, half.y - 8f, 12, DimPhosphor, TextAlign.Right);
             c.PopClip();

@@ -39,6 +39,12 @@ namespace AutopilotCore
         public string NavLabel;
         public bool HasNavTrack;
         public float NavTrack;
+        public bool HoldOn;
+        public string HoldLabel;
+        public bool HasOrbit;
+        public double OrbitLat;
+        public double OrbitLon;
+        public float OrbitRadiusM;
 
         private bool _hasLastIas;
         private float _lastIas;
@@ -104,6 +110,18 @@ namespace AutopilotCore
             NavLabel = nav != null ? nav.ActiveLabel : "";
             float navTrack = 0f;
             HasNavTrack = nav != null && nav.TryGetDesiredTrack(out navTrack);
+
+            HoldPattern hold = modules.Find<HoldPattern>();
+            HoldOn = hold != null && hold.Enabled;
+            HoldLabel = hold != null ? hold.Label : "";
+            HasOrbit = hold != null && hold.TryGetOrbit(out OrbitLat, out OrbitLon, out OrbitRadiusM);
+            float holdTrack;
+            if (hold != null && hold.TryGetDesiredTrack(out holdTrack))
+            {
+                HasNavTrack = true;
+                navTrack = holdTrack;
+            }
+
             NavTrack = navTrack;
         }
     }

@@ -32,6 +32,19 @@ namespace AutopilotCore
             return null;
         }
 
+        public bool AnyEnabled<T>() where T : class, IAutopilotModule
+        {
+            for (int i = 0; i < _modules.Count; i++)
+            {
+                if (_modules[i].Enabled && _modules[i] is T)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public void Register(IAutopilotModule module)
         {
             if (module == null)
@@ -54,6 +67,11 @@ namespace AutopilotCore
         {
             for (int i = 0; i < _modules.Count; i++)
             {
+                if (i > 0)
+                {
+                    Divider.Draw();
+                }
+
                 IAutopilotModule module = _modules[i];
                 bool wasEnabled = module.Enabled;
                 module.DrawGui();
