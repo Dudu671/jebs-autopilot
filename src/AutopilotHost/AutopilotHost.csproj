@@ -9,7 +9,8 @@
       <KspPluginsDir>$(KSPDir)\GameData\MyAutopilot\Plugins</KspPluginsDir>
     </PropertyGroup>
     <MakeDir Directories="$(KspPluginsDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspPluginsDir)" SkipUnchangedFiles="false" />
+    <!-- The game locks this DLL while KSP is open; Core can still hot-reload. -->
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(KspPluginsDir)" SkipUnchangedFiles="false" ContinueOnError="true" />
     <Message Importance="high" Text="AutopilotHost copied to $(KspPluginsDir)" />
   </Target>
 </Project>

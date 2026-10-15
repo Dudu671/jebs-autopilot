@@ -11,6 +11,7 @@ namespace AutopilotHost
         private const string CoreTypeName = "AutopilotCore.Controller";
         private const string CoreFileName = "AutopilotCore.bin";
         private const float DebounceSeconds = 0.3f;
+        private const string WeatherPatchType = "AutopilotKwp.KwpPatch, AutopilotKwp";
 
         private GameObject _coreObject;
         private string _dllPath;
@@ -28,6 +29,29 @@ namespace AutopilotHost
                 CoreFileName);
 
             Debug.Log("[AutopilotHost] Watching " + _dllPath + " (F8 to force reload).");
+
+            ApplyWeatherPatch();
+        }
+
+        // AutopilotKwp needs Harmony; without it KSP skips that DLL and this finds nothing.
+        private static void ApplyWeatherPatch()
+        {
+            try
+            {
+                Type patch = Type.GetType(WeatherPatchType);
+                MethodInfo apply = patch != null ? patch.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static) : null;
+                if (apply == null)
+                {
+                    Debug.Log("[AutopilotHost] AutopilotKwp not loaded (Harmony missing?); KWP weather stays active-vessel only.");
+                    return;
+                }
+
+                apply.Invoke(null, null);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[AutopilotHost] KWP weather patch unavailable: " + ex.Message);
+            }
         }
 
         private void Update()

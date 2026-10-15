@@ -5,11 +5,16 @@ using UnityEngine;
 namespace AutopilotCore
 {
     // Reads wind, pressure, and temperature from Kerbal Weather Project when it is loaded.
+    // The host samples them at each vessel's position; without it, KWP's active-vessel values are used.
     // Resolved once per Core assembly so a missing mod falls back to the stock atmosphere.
     public static class Atmosphere
     {
         private const string AssemblyName = "KerbalWeatherProject";
+        private const string HostType = "AutopilotHost.KwpWeather, AutopilotHost";
 
+        private delegate bool SampleFn(Vessel vessel, out Vector3d wind, out double temperatureK, out double pressurePa);
+
+        private static SampleFn _hostSample;
         private static bool _searched;
         private static bool _present;
         private static FieldInfo _weatherEnabled;
@@ -59,6 +64,25 @@ namespace AutopilotCore
             temperatureK = vessel.atmosphericTemperature;
             pressurePa = vessel.staticPressurekPa * 1000.0;
             EnsureBound();
+
+            Vector3d sampled;
+            double hostTemperature;
+            double hostPressure;
+            if (_hostSample != null && _hostSample(vessel, out sampled, out hostTemperature, out hostPressure))
+            {
+                if (hostTemperature > 1.0)
+                {
+                    temperatureK = hostTemperature;
+                }
+
+                if (hostPressure > 1.0)
+                {
+                    pressurePa = hostPressure;
+                }
+
+                return sampled;
+            }
+
             if (!_present || !Flag(_weatherEnabled))
             {
                 return Vector3d.zero;
@@ -89,6 +113,7 @@ namespace AutopilotCore
             }
 
             _searched = true;
+            _hostSample = BindHost();
             try
             {
                 Assembly assembly = FindAssembly();
@@ -123,6 +148,22 @@ namespace AutopilotCore
             {
                 Debug.LogWarning("[AutopilotCore] Kerbal Weather Project was not bound: " + ex.Message);
                 _present = false;
+            }
+        }
+
+        // Core is loaded from bytes and does not reference the host, so the host's sampler is bound by name.
+        private static SampleFn BindHost()
+        {
+            try
+            {
+                Type host = Type.GetType(HostType);
+                MethodInfo sample = host != null ? host.GetMethod("Sample", BindingFlags.Public | BindingFlags.Static) : null;
+                return sample != null ? (SampleFn)Delegate.CreateDelegate(typeof(SampleFn), sample) : null;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[AutopilotCore] Host weather sampler not bound: " + ex.Message);
+                return null;
             }
         }
 
