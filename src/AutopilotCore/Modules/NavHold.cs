@@ -4,7 +4,7 @@ using UnityEngine;
 namespace AutopilotCore
 {
     // Follows the waypoint legs by ground track. A point L1 meters ahead on the leg sets the
-    // desired track, and the heading command is that track minus the crosswind crab angle.
+    // desired track, and the bank closes on the measured track, so no wind model is needed.
     public sealed class NavHold : ILateralMode
     {
         private const float L1Period = 25f;
@@ -20,7 +20,7 @@ namespace AutopilotCore
         private readonly YawControl _yaw = new YawControl("Nav yaw");
         private readonly FlightRecorder _recorder = new FlightRecorder(
             "nav_hold.csv",
-            "t,dist_m,xtrack_m,desired_trk,track,hdg_cmd,hdg,crab,l1_m,bank,gs_mps");
+            "t,dist_m,xtrack_m,desired_trk,track,hdg,l1_m,bank,beta,rudder,gs_mps");
         private readonly NavPlan _plan = new NavPlan();
         private int _maxBankIndex = 4;
 
@@ -99,8 +99,8 @@ namespace AutopilotCore
             _yaw.Coordinate(vessel, ctrl, dt);
             if (_plan.HasActive && groundVel.magnitude > MinGuidanceSpeed)
             {
-                float headingTarget = GuideToActive(vessel, groundVel, maxBank, engaging, dt);
-                _bank.Step(vessel, ctrl, vessel.GetHeading(), headingTarget, maxBank, dt);
+                float desiredTrack = GuideToActive(vessel, groundVel, maxBank, engaging, dt);
+                _bank.Step(vessel, ctrl, current, desiredTrack, maxBank, dt);
                 return;
             }
 
@@ -134,7 +134,7 @@ namespace AutopilotCore
             _maxBankIndex = BankController.DrawMaxBankSlider(_maxBankIndex);
         }
 
-        // Heading to fly so the ground track converges on the leg.
+        // Ground track to fly so the aircraft converges on the leg.
         private float GuideToActive(Vessel vessel, Vector2 groundVel, float maxBank, bool engaging, float dt)
         {
             double radius = vessel.mainBody.Radius;
@@ -180,19 +180,13 @@ namespace AutopilotCore
             float desiredTrack = Mathf.Repeat(Mathf.Atan2(toPoint.x, toPoint.y) * Mathf.Rad2Deg, 360f);
             _desiredCourse = desiredTrack;
 
-            float trackRad = desiredTrack * Mathf.Deg2Rad;
-            Vector2 trackRight = new Vector2(Mathf.Cos(trackRad), -Mathf.Sin(trackRad));
-            float windRight = Vector2.Dot(vessel.GetWindHorizontal(), trackRight);
-            float crab = Mathf.Asin(Mathf.Clamp(windRight / Mathf.Max(airSpeed, 1f), -0.85f, 0.85f)) * Mathf.Rad2Deg;
-            float headingTarget = Mathf.Repeat(desiredTrack - crab, 360f);
-
             if (_recorder.Tick(dt))
             {
-                _recorder.Record(_distanceM, crossTrack, desiredTrack, vessel.GetTrack(), headingTarget,
-                    vessel.GetHeading(), crab, l1, vessel.GetBank(), groundSpeed);
+                _recorder.Record(_distanceM, crossTrack, desiredTrack, vessel.GetTrack(), vessel.GetHeading(), l1,
+                    vessel.GetBank(), vessel.GetSideslip() * Mathf.Rad2Deg, _yaw.Output, groundSpeed);
             }
 
-            return headingTarget;
+            return desiredTrack;
         }
 
         private static float HorizontalAirspeed(Vessel vessel)

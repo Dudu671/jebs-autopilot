@@ -67,6 +67,12 @@ namespace AutopilotCore
             return vessel.GetSrfVelocity() - Atmosphere.WindWorld(vessel);
         }
 
+        // Velocity the lifting surfaces see. KWP adds wind only to drag in flight; wings and fin keep the surface velocity.
+        public static Vector3d GetAeroVelocity(this Vessel vessel)
+        {
+            return vessel.GetSrfVelocity();
+        }
+
         // Horizontal wind in m/s, x = east, y = north. The vector points where the air is moving.
         public static Vector2 GetWindHorizontal(this Vessel vessel)
         {
@@ -95,7 +101,7 @@ namespace AutopilotCore
         // Radians, positive with the air from the right of the nose (needs nose-right yaw).
         public static float GetSideslip(this Vessel vessel)
         {
-            Vector3d air = vessel.GetAirVelocity();
+            Vector3d air = vessel.GetAeroVelocity();
             Transform t = vessel.ReferenceTransform;
             double forward = Vector3d.Dot(air, t.up);
             if (air.sqrMagnitude < 1.0 || forward < 0.1)
@@ -151,7 +157,7 @@ namespace AutopilotCore
         // Positive with the nose above the airflow; transform.forward points out of the belly.
         public static float GetAoA(this Vessel vessel)
         {
-            Vector3d vel = vessel.GetAirVelocity();
+            Vector3d vel = vessel.GetAeroVelocity();
             if (vel.sqrMagnitude < 1e-4)
             {
                 return 0f;
