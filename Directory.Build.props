@@ -35,6 +35,10 @@
       <HintPath>$(KSPManaged)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.VehiclesModule">
+      <HintPath>$(KSPManaged)\UnityEngine.VehiclesModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>$(KSPManaged)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>

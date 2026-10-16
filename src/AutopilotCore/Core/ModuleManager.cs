@@ -86,6 +86,11 @@ namespace AutopilotCore
                     {
                         DisableOthers<IVerticalMode>(module);
                     }
+
+                    if (module is IThrottleMode)
+                    {
+                        DisableOthers<IThrottleMode>(module);
+                    }
                 }
             }
         }

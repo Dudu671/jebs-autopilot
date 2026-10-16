@@ -41,6 +41,10 @@ namespace AutopilotCore
         public float NavTrack;
         public bool HoldOn;
         public string HoldLabel;
+        public bool LandOn;
+        public string LandRunway;
+        public string LandLateral;
+        public string LandVertical;
         public bool HasOrbit;
         public double OrbitLat;
         public double OrbitLon;
@@ -120,6 +124,23 @@ namespace AutopilotCore
             {
                 HasNavTrack = true;
                 navTrack = holdTrack;
+            }
+
+            Autoland land = modules.Find<Autoland>();
+            LandOn = land != null && land.Enabled;
+            if (LandOn)
+            {
+                LandRunway = land.RunwayName;
+                LandLateral = land.LateralLabel;
+                LandVertical = land.VerticalLabel;
+                SpeedOn = true;
+                SpeedTargetKt = land.SpeedTargetKt;
+                float landTrack;
+                if (land.TryGetDesiredTrack(out landTrack))
+                {
+                    HasNavTrack = true;
+                    navTrack = landTrack;
+                }
             }
 
             NavTrack = navTrack;

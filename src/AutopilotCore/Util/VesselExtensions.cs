@@ -134,7 +134,13 @@ namespace AutopilotCore
 
         public static float GetIasKt(this Vessel vessel)
         {
-            return (float)CalibratedAirspeed(vessel) * Units.KnotsPerMps;
+            return (float)CalibratedAirspeed(vessel, vessel.GetAirVelocity().magnitude) * Units.KnotsPerMps;
+        }
+
+        // IAS of the velocity the wings see, which sets the stall margin; equal to IAS without wind.
+        public static float GetAeroIasKt(this Vessel vessel)
+        {
+            return (float)CalibratedAirspeed(vessel, vessel.GetAeroVelocity().magnitude) * Units.KnotsPerMps;
         }
 
         public static float GetTasKt(this Vessel vessel)
@@ -204,9 +210,8 @@ namespace AutopilotCore
         }
 
         // Subsonic pitot conversion so indicated airspeed follows the air mass, not the ground.
-        private static double CalibratedAirspeed(Vessel vessel)
+        private static double CalibratedAirspeed(Vessel vessel, double tas)
         {
-            double tas = vessel.GetAirVelocity().magnitude;
             double pressure = Atmosphere.PressurePa(vessel);
             double temperature = Atmosphere.TemperatureK(vessel);
             if (tas < 0.1 || pressure < 1.0 || temperature < 1.0)

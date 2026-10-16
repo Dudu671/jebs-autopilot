@@ -13,6 +13,7 @@ namespace AutopilotCore
 
         private readonly string _fileName;
         private readonly string _header;
+        private readonly bool _perRun;
         private readonly StringBuilder _buffer = new StringBuilder();
         private string _path;
         private float _time;
@@ -20,17 +21,22 @@ namespace AutopilotCore
         private float _nextFlush;
         private bool _open;
 
-        public FlightRecorder(string fileName, string header)
+        // perRun: each Start writes a new file stamped with the time, instead of replacing the last one.
+        public FlightRecorder(string fileName, string header, bool perRun = false)
         {
             _fileName = fileName;
             _header = header;
+            _perRun = perRun;
         }
 
         // One folder per vessel, so vessels flown at the same time do not share a file.
         public void Start(Vessel vessel)
         {
             string root = Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "Logs"), "MyAutopilot");
-            _path = Path.Combine(Path.Combine(root, FolderName(vessel)), _fileName);
+            string fileName = _perRun
+                ? Path.GetFileNameWithoutExtension(_fileName) + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + Path.GetExtension(_fileName)
+                : _fileName;
+            _path = Path.Combine(Path.Combine(root, FolderName(vessel)), fileName);
             _time = 0f;
             _nextSample = 0f;
             _nextFlush = FlushInterval;

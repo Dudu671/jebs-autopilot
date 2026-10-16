@@ -7,14 +7,8 @@ namespace AutopilotCore
     // desired track, and the bank closes on the measured track, so no wind model is needed.
     public sealed class NavHold : ILateralMode
     {
-        private const float L1Period = 25f;
-        private const float L1Damping = 0.75f;
-        private const float MinL1 = 300f;
         private const float MinCaptureM = 150f;
         private const float MinGuidanceSpeed = 10f;
-
-        // Heading error (rad) at which the guidance reaches max bank.
-        private const float LinearEta = 0.5f;
 
         private readonly BankController _bank = new BankController();
         private readonly YawControl _yaw = new YawControl("Nav yaw");
@@ -164,20 +158,8 @@ namespace AutopilotCore
                 }
             }
 
-            float courseRad = legCourse * Mathf.Deg2Rad;
-            Vector2 along = new Vector2(Mathf.Sin(courseRad), Mathf.Cos(courseRad));
-            Vector2 right = new Vector2(along.y, -along.x);
-
-            // L1 must scale with the turn radius: shorter than that, small errors already demand more
-            // than max bank and the command saturates left and right in a limit cycle.
-            float gain = 4f * L1Damping * L1Damping;
-            float maxLateralAccel = _gravity * Mathf.Tan(maxBank * Mathf.Deg2Rad);
-            float l1ForBank = gain * airSpeed * airSpeed * Mathf.Sin(LinearEta) / maxLateralAccel;
-            float l1 = Mathf.Max(MinL1, Mathf.Max(L1Damping * L1Period * groundSpeed / Mathf.PI, l1ForBank));
-            float offset = Mathf.Clamp(crossTrack, -0.9f * l1, 0.9f * l1);
-            float ahead = Mathf.Sqrt((l1 * l1) - (offset * offset));
-            Vector2 toPoint = (along * ahead) - (right * offset);
-            float desiredTrack = Mathf.Repeat(Mathf.Atan2(toPoint.x, toPoint.y) * Mathf.Rad2Deg, 360f);
+            float l1;
+            float desiredTrack = L1Guidance.DesiredTrack(legCourse, crossTrack, groundSpeed, airSpeed, _gravity, maxBank, out l1);
             _desiredCourse = desiredTrack;
 
             if (_recorder.Tick(dt))
