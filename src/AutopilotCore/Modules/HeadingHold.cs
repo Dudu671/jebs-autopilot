@@ -21,6 +21,11 @@ namespace AutopilotCore
             get { return Mathf.Repeat(_target.Value, 360f); }
         }
 
+        public string Summary
+        {
+            get { return "HDG " + Format.Heading(TargetHeading); }
+        }
+
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
             if (!Enabled || vessel == null)

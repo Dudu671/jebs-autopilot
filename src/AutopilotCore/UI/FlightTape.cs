@@ -4,6 +4,10 @@ namespace AutopilotCore
 {
     public sealed class FlightTape
     {
+        private const float NameWidth = 40f;
+        private const float ValueWidth = 96f;
+        private const float ColumnGap = 32f;
+
         public void Draw(Vessel vessel)
         {
             GUILayout.BeginVertical(GUI.skin.box);
@@ -30,15 +34,16 @@ namespace AutopilotCore
         private static void DrawRow(string leftName, string leftValue, string rightName, string rightValue)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(leftName, GUILayout.Width(36f));
-            GUILayout.Label(leftValue, GUILayout.Width(90f));
-            if (!string.IsNullOrEmpty(rightName))
-            {
-                GUILayout.Label(rightName, GUILayout.Width(36f));
-                GUILayout.Label(rightValue);
-            }
-
+            DrawCell(leftName, leftValue);
+            GUILayout.Space(ColumnGap);
+            DrawCell(rightName, rightValue);
             GUILayout.EndHorizontal();
+        }
+
+        private static void DrawCell(string name, string value)
+        {
+            GUILayout.Label(name, GuiStyles.LabelLeft, GUILayout.Width(NameWidth));
+            GUILayout.Label(value, GuiStyles.LabelRight, GUILayout.Width(ValueWidth));
         }
 
         private static string WindText(Vessel vessel)

@@ -47,6 +47,11 @@ namespace AutopilotCore
             get { return _plan.HasActive ? "WP" + (_plan.ActiveIndex + 1) : "END"; }
         }
 
+        public string Summary
+        {
+            get { return "NAV " + ActiveLabel; }
+        }
+
         // Ground track the guidance is chasing, available only while engaged on the active waypoint.
         public bool TryGetDesiredTrack(out float track)
         {

@@ -63,35 +63,29 @@ namespace AutopilotCore
             }
         }
 
-        public void DrawAllGui()
+        // Engaging a module from its controls disengages the modes it takes over.
+        public void DrawGui(IAutopilotModule module)
         {
-            for (int i = 0; i < _modules.Count; i++)
+            bool wasEnabled = module.Enabled;
+            module.DrawGui();
+            if (wasEnabled || !module.Enabled)
             {
-                if (i > 0)
-                {
-                    Divider.Draw();
-                }
+                return;
+            }
 
-                IAutopilotModule module = _modules[i];
-                bool wasEnabled = module.Enabled;
-                module.DrawGui();
-                if (!wasEnabled && module.Enabled)
-                {
-                    if (module is ILateralMode)
-                    {
-                        DisableOthers<ILateralMode>(module);
-                    }
+            if (module is ILateralMode)
+            {
+                DisableOthers<ILateralMode>(module);
+            }
 
-                    if (module is IVerticalMode)
-                    {
-                        DisableOthers<IVerticalMode>(module);
-                    }
+            if (module is IVerticalMode)
+            {
+                DisableOthers<IVerticalMode>(module);
+            }
 
-                    if (module is IThrottleMode)
-                    {
-                        DisableOthers<IThrottleMode>(module);
-                    }
-                }
+            if (module is IThrottleMode)
+            {
+                DisableOthers<IThrottleMode>(module);
             }
         }
 

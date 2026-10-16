@@ -41,6 +41,11 @@ namespace AutopilotCore
             get { return (_direction == Right ? "R " : "L ") + _radiusKm.Value.ToString("0.#"); }
         }
 
+        public string Summary
+        {
+            get { return "HOLD " + Label + " km"; }
+        }
+
         public bool TryGetDesiredTrack(out float track)
         {
             track = _desiredTrack;

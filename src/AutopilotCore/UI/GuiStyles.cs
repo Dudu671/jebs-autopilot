@@ -10,9 +10,17 @@ namespace AutopilotCore
         // Extra pixels between a checkbox and its label.
         private const int CheckboxGap = 6;
 
+        // Inset of the text drawn over a section header button.
+        private const int HeaderInset = 8;
+
         private static GUISkin _skin;
         private static GUIStyle _toggle;
         private static GUIStyle _toggleButton;
+        private static GUIStyle _labelLeft;
+        private static GUIStyle _labelRight;
+        private static GUIStyle _headerTitle;
+        private static GUIStyle _headerSummary;
+        private static GUIStyle _headerSummaryOn;
 
         public static GUIStyle Toggle
         {
@@ -33,6 +41,40 @@ namespace AutopilotCore
             }
         }
 
+        // The skin's own label alignment is not left everywhere, so text that must line up says so.
+        public static GUIStyle LabelLeft
+        {
+            get
+            {
+                Refresh();
+                return _labelLeft;
+            }
+        }
+
+        public static GUIStyle LabelRight
+        {
+            get
+            {
+                Refresh();
+                return _labelRight;
+            }
+        }
+
+        public static GUIStyle HeaderTitle
+        {
+            get
+            {
+                Refresh();
+                return _headerTitle;
+            }
+        }
+
+        public static GUIStyle HeaderSummary(bool on)
+        {
+            Refresh();
+            return on ? _headerSummaryOn : _headerSummary;
+        }
+
         private static void Refresh()
         {
             if (_toggle != null && _skin == GUI.skin)
@@ -44,6 +86,20 @@ namespace AutopilotCore
             _toggle = Green(new GUIStyle(GUI.skin.toggle));
             _toggle.padding.left += CheckboxGap;
             _toggleButton = Green(new GUIStyle(GUI.skin.button));
+            _labelLeft = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft };
+            _labelRight = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperRight };
+            _headerTitle = Header(TextAnchor.MiddleLeft);
+            _headerSummary = Header(TextAnchor.MiddleRight);
+            _headerSummaryOn = Header(TextAnchor.MiddleRight);
+            _headerSummaryOn.normal.textColor = On;
+        }
+
+        private static GUIStyle Header(TextAnchor alignment)
+        {
+            GUIStyle style = new GUIStyle(GUI.skin.label) { alignment = alignment, wordWrap = false };
+            style.padding = new RectOffset(HeaderInset, HeaderInset, 0, 0);
+            style.margin = new RectOffset(0, 0, 0, 0);
+            return style;
         }
 
         private static GUIStyle Green(GUIStyle style)

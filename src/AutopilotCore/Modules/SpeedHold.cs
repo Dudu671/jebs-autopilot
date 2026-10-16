@@ -19,6 +19,11 @@ namespace AutopilotCore
             get { return _target.Value; }
         }
 
+        public string Summary
+        {
+            get { return "SPD " + _target.Value.ToString("F0") + " kt"; }
+        }
+
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
             if (!Enabled || vessel == null)

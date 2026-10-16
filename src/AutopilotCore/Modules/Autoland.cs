@@ -200,6 +200,11 @@ namespace AutopilotCore
             }
         }
 
+        public string Summary
+        {
+            get { return "LAND " + RunwayName + "  " + LateralLabel + " " + VerticalLabel; }
+        }
+
         // In the flare and on the ground the rudder aligns the nose, so the fly-by-wire yaw damper must not override it.
         public bool OwnsRudder
         {

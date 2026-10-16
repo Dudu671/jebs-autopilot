@@ -91,6 +91,15 @@ namespace AutopilotCore
 
         public bool Enabled { get; set; }
 
+        public string Summary
+        {
+            get
+            {
+                string text = Enabled ? "ON" : "OFF";
+                return _loadLimited ? text + "  G " + _maxLoad.ToString("+0.0") + "/" + _minLoad.ToString("0.0") : text;
+            }
+        }
+
         public void DrawGui()
         {
             Enabled = GUILayout.Toggle(Enabled, "Fly-by-wire", GuiStyles.ToggleButton);

@@ -19,6 +19,11 @@ namespace AutopilotCore
             get { return _target; }
         }
 
+        public string Summary
+        {
+            get { return "PITCH " + Format.Signed(_target, "F1") + "°"; }
+        }
+
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
             if (!Enabled || vessel == null)

@@ -18,6 +18,7 @@ namespace AutopilotCore
         private VesselPilot _pilot;
         private bool _collapsed;
         private bool _mouseOverGui;
+        private ModuleGroup[] _groups;
 
         public MainWindow()
         {
@@ -77,6 +78,19 @@ namespace AutopilotCore
 
             _pilot = pilot;
             _nav.Bind(pilot != null ? pilot.Nav : null);
+            _groups = pilot != null ? BuildGroups(pilot.Modules) : null;
+        }
+
+        private static ModuleGroup[] BuildGroups(ModuleManager modules)
+        {
+            return new[]
+            {
+                new ModuleGroup("Lateral", new[] { "HDG", "NAV", "HOLD" },
+                    modules.Find<HeadingHold>(), modules.Find<NavHold>(), modules.Find<HoldPattern>()),
+                new ModuleGroup("Vertical", new[] { "ALT", "PITCH" }, modules.Find<AltitudeHold>(), modules.Find<PitchHold>()),
+                new ModuleGroup("Speed", null, modules.Find<SpeedHold>()),
+                new ModuleGroup("Approach", null, modules.Find<Autoland>()),
+            };
         }
 
         private bool MouseOverWindow(Vector2 guiMouse)
@@ -143,27 +157,30 @@ namespace AutopilotCore
                 return;
             }
 
-            Divider.Draw();
-            _pilot.FlyByWire.DrawGui();
+            GUILayout.BeginHorizontal();
+            _pfd.Visible = GUILayout.Toggle(_pfd.Visible, "PFD", GuiStyles.ToggleButton);
+            _nav.Visible = GUILayout.Toggle(_nav.Visible, "Nav display", GuiStyles.ToggleButton);
+            _gyro.Visible = GUILayout.Toggle(_gyro.Visible, "Directional gyro", GuiStyles.ToggleButton);
+            GUILayout.EndHorizontal();
 
             Divider.Draw();
-            _pilot.Modules.DrawAllGui();
+            FlyByWire flyByWire = _pilot.FlyByWire;
+            if (Foldout.Header("Fly-by-wire", flyByWire.Summary, flyByWire.Enabled))
+            {
+                flyByWire.DrawGui();
+                GUILayout.Space(6f);
+            }
+
+            for (int i = 0; i < _groups.Length; i++)
+            {
+                _groups[i].Draw(_pilot.Modules);
+            }
 
             Divider.Draw();
             if (GUILayout.Button("Disable all"))
             {
                 _pilot.Modules.DisableAll();
             }
-
-            GUILayout.Space(10f);
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label("Instruments");
-            GUILayout.BeginHorizontal();
-            _pfd.Visible = GUILayout.Toggle(_pfd.Visible, "PFD", GuiStyles.ToggleButton);
-            _nav.Visible = GUILayout.Toggle(_nav.Visible, "Nav display", GuiStyles.ToggleButton);
-            _gyro.Visible = GUILayout.Toggle(_gyro.Visible, "Directional gyro", GuiStyles.ToggleButton);
-            GUILayout.EndHorizontal();
-            GUILayout.EndVertical();
 
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 20f));
         }
