@@ -36,6 +36,9 @@ namespace AutopilotHost
         private static AtmFields _climoFields;
         private static AtmFields _pointFields;
 
+        // True once AutopilotKwp has made KWP's wind reach wings and fins at every height, not only below 10 m.
+        public static bool LiftInFlight { get; set; }
+
         public static bool Bound
         {
             get

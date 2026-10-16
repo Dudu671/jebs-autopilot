@@ -67,10 +67,11 @@ namespace AutopilotCore
             return vessel.GetSrfVelocity() - Atmosphere.WindWorld(vessel);
         }
 
-        // Velocity the lifting surfaces see. KWP adds wind only to drag in flight; wings and fin keep the surface velocity.
+        // Velocity the lifting surfaces see: the air velocity where KWP applies the wind to their lift, else the
+        // surface velocity, since without that the wind reaches only the drag.
         public static Vector3d GetAeroVelocity(this Vessel vessel)
         {
-            return vessel.GetSrfVelocity();
+            return Atmosphere.LiftFeelsWind(vessel) ? vessel.GetAirVelocity() : (Vector3d)vessel.GetSrfVelocity();
         }
 
         // Horizontal wind in m/s, x = east, y = north. The vector points where the air is moving.

@@ -14,7 +14,11 @@ namespace AutopilotCore
 
         private delegate bool SampleFn(Vessel vessel, out Vector3d wind, out double temperatureK, out double pressurePa);
 
+        // KWP corrects lift for the wind only below this height above the terrain, unless the host extends it.
+        private const float KwpLiftHeight = 10f;
+
         private static SampleFn _hostSample;
+        private static Func<bool> _hostLiftInFlight;
         private static bool _searched;
         private static bool _present;
         private static FieldInfo _weatherEnabled;
@@ -40,6 +44,14 @@ namespace AutopilotCore
                 EnsureBound();
                 return _present;
             }
+        }
+
+        // Whether wings and fins feel the wind: KWP applies it to their lift within 10 m of the terrain, and
+        // at every height once AutopilotKwp has patched it. Otherwise the wind reaches only the drag.
+        public static bool LiftFeelsWind(Vessel vessel)
+        {
+            EnsureBound();
+            return (_hostLiftInFlight != null && _hostLiftInFlight()) || vessel.heightFromTerrain < KwpLiftHeight;
         }
 
         // World-space velocity of the air mass, m/s. Zero when weather is off or KWP is absent.
@@ -138,6 +150,7 @@ namespace AutopilotCore
 
             _searched = true;
             _hostSample = BindHost();
+            _hostLiftInFlight = BindHostLiftInFlight();
             try
             {
                 Assembly assembly = FindAssembly();
@@ -187,6 +200,23 @@ namespace AutopilotCore
             catch (Exception ex)
             {
                 Debug.LogWarning("[AutopilotCore] Host weather sampler not bound: " + ex.Message);
+                return null;
+            }
+        }
+
+        // Read each time, since the patch may land after the core binds.
+        private static Func<bool> BindHostLiftInFlight()
+        {
+            try
+            {
+                Type host = Type.GetType(HostType);
+                PropertyInfo property = host != null ? host.GetProperty("LiftInFlight", BindingFlags.Public | BindingFlags.Static) : null;
+                MethodInfo getter = property != null ? property.GetGetMethod() : null;
+                return getter != null ? (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), getter) : null;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[AutopilotCore] Host lift wind flag not bound: " + ex.Message);
                 return null;
             }
         }
