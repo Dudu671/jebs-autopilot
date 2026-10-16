@@ -19,6 +19,7 @@ namespace AutopilotCore
         public float TargetHeading
         {
             get { return Mathf.Repeat(_target.Value, 360f); }
+            set { _target.Value = Mathf.Round(Mathf.Repeat(value, 360f)); }
         }
 
         public string Summary

@@ -41,10 +41,10 @@ namespace AutopilotCore
         public float NavTrack;
         public bool HoldOn;
         public string HoldLabel;
-        public bool LandOn;
-        public string LandRunway;
-        public string LandLateral;
-        public string LandVertical;
+        public bool ProcedureOn;
+        public string ProcedureLateral;
+        public string ProcedureLateralValue;
+        public string ProcedureVertical;
         public bool HasOrbit;
         public double OrbitLat;
         public double OrbitLon;
@@ -126,24 +126,38 @@ namespace AutopilotCore
                 navTrack = holdTrack;
             }
 
-            Autoland land = modules.Find<Autoland>();
-            LandOn = land != null && land.Enabled;
-            if (LandOn)
+            IFlightProcedure procedure = Engaged(modules);
+            ProcedureOn = procedure != null;
+            if (ProcedureOn)
             {
-                LandRunway = land.RunwayName;
-                LandLateral = land.LateralLabel;
-                LandVertical = land.VerticalLabel;
+                ProcedureLateral = procedure.LateralLabel;
+                ProcedureLateralValue = procedure.LateralValue;
+                ProcedureVertical = procedure.VerticalLabel;
                 SpeedOn = true;
-                SpeedTargetKt = land.SpeedTargetKt;
-                float landTrack;
-                if (land.TryGetDesiredTrack(out landTrack))
+                SpeedTargetKt = procedure.SpeedTargetKt;
+                float procedureTrack;
+                if (procedure.TryGetDesiredTrack(out procedureTrack))
                 {
                     HasNavTrack = true;
-                    navTrack = landTrack;
+                    navTrack = procedureTrack;
                 }
             }
 
             NavTrack = navTrack;
+        }
+
+        private static IFlightProcedure Engaged(ModuleManager modules)
+        {
+            for (int i = 0; i < modules.Modules.Count; i++)
+            {
+                IFlightProcedure procedure = modules.Modules[i] as IFlightProcedure;
+                if (procedure != null && procedure.Enabled)
+                {
+                    return procedure;
+                }
+            }
+
+            return null;
         }
     }
 }

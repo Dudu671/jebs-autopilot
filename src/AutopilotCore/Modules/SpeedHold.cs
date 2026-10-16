@@ -17,6 +17,7 @@ namespace AutopilotCore
         public float TargetKt
         {
             get { return _target.Value; }
+            set { _target.Value = value; }
         }
 
         public string Summary

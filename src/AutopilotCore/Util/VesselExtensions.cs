@@ -150,9 +150,13 @@ namespace AutopilotCore
 
         public static float GetMach(this Vessel vessel)
         {
+            return (float)(vessel.GetAirVelocity().magnitude / vessel.GetSpeedOfSound());
+        }
+
+        public static double GetSpeedOfSound(this Vessel vessel)
+        {
             double temperature = Math.Max(Atmosphere.TemperatureK(vessel), 1.0);
-            double speedOfSound = Math.Sqrt(1.4 * 287.05 * temperature);
-            return (float)(vessel.GetAirVelocity().magnitude / speedOfSound);
+            return Math.Sqrt(1.4 * 287.05 * temperature);
         }
 
         public static float GetGsKt(this Vessel vessel)
@@ -210,7 +214,7 @@ namespace AutopilotCore
         }
 
         // Subsonic pitot conversion so indicated airspeed follows the air mass, not the ground.
-        private static double CalibratedAirspeed(Vessel vessel, double tas)
+        public static double CalibratedAirspeed(Vessel vessel, double tas)
         {
             double pressure = Atmosphere.PressurePa(vessel);
             double temperature = Atmosphere.TemperatureK(vessel);

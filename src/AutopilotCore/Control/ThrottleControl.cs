@@ -22,6 +22,17 @@ namespace AutopilotCore
             _active = false;
         }
 
+        // KSP restores the active vessel's throttle from the lever every frame, so the lever follows
+        // the output; it also stays where it was left when the mode lets go.
+        public static void Apply(Vessel vessel, FlightCtrlState ctrl, float throttle)
+        {
+            ctrl.mainThrottle = throttle;
+            if (vessel.isActiveVessel && FlightInputHandler.state != null)
+            {
+                FlightInputHandler.state.mainThrottle = throttle;
+            }
+        }
+
         public float Step(float ias, float targetKt, float throttle, float dt)
         {
             if (!_active)

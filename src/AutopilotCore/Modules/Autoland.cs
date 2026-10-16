@@ -7,7 +7,7 @@ namespace AutopilotCore
     // FAF, descending to 1000 ft at the FAF. Then it follows the 3 degree glide path, flares within the
     // tail clearance, and keeps the centerline braking to a stop. Heights are of the vessel's lowest
     // point above the runway.
-    public sealed class Autoland : ILateralMode, IVerticalMode, IThrottleMode
+    public sealed class Autoland : IFlightProcedure
     {
         private enum Phase
         {
@@ -91,13 +91,6 @@ namespace AutopilotCore
         private const float TailStrikeMargin = 2f;
         private const float IdleRate = 0.5f;
 
-        // Rollout: steer at a point ahead on the centerline, rudder and nose wheel together.
-        private const float SteerLookahead = 60f;
-        private const float SteerLookaheadTime = 3f;
-        private const float MaxSteerOffset = 5f;
-        private const float SteerGain = 3f;
-        private const float SteerDamp = 1.5f;
-        private const float WheelSteerSpeed = 8f;
         private const float NoseLowerRate = 0.4f;
 
         // Derotation: the attitude target falls at this rate to level, is held, then the elevator is released.
@@ -113,6 +106,7 @@ namespace AutopilotCore
         private readonly YawControl _yaw = new YawControl("Autoland yaw");
         private readonly ThrottleControl _throttle = new ThrottleControl();
         private readonly GroundGeometry _ground = new GroundGeometry();
+        private readonly RunwaySteering _steering = new RunwaySteering();
         private readonly FloatField _vref = new FloatField(70f);
         private readonly FloatField _patternFt = new FloatField(2000f);
         private readonly FlightRecorder _recorder = new FlightRecorder(
@@ -163,7 +157,7 @@ namespace AutopilotCore
 
         public bool Enabled { get; set; }
 
-        public string RunwayName
+        public string LateralValue
         {
             get { return Runway.Ksc[_runwayIndex].Name; }
         }
@@ -202,7 +196,7 @@ namespace AutopilotCore
 
         public string Summary
         {
-            get { return "LAND " + RunwayName + "  " + LateralLabel + " " + VerticalLabel; }
+            get { return "LAND " + LateralValue + "  " + LateralLabel + " " + VerticalLabel; }
         }
 
         // In the flare and on the ground the rudder aligns the nose, so the fly-by-wire yaw damper must not override it.
@@ -330,6 +324,7 @@ namespace AutopilotCore
             _bank.Reset();
             _yaw.Release();
             _throttle.Reset();
+            _steering.Reset();
             Locate(vessel);
             _cruiseHeight = Mathf.Max(_height, FafHeight);
             if (vessel.LandedOrSplashed)
@@ -626,7 +621,7 @@ namespace AutopilotCore
             // Flare: bank holds the track and the rudder brings the nose onto the centerline, taking out any crab.
             if (_phase == Phase.Flare)
             {
-                ctrl.yaw = RudderToHeading(vessel, _runway.Course);
+                ctrl.yaw = _steering.RudderToHeading(vessel, _runway.Course, dt);
             }
             else
             {
@@ -655,15 +650,6 @@ namespace AutopilotCore
             float radius = Mathf.Max(Mathf.Abs(_cross) / closing, 1f);
             float bank = Mathf.Atan(groundSpeed * groundSpeed / (gravity * radius)) * Mathf.Rad2Deg;
             return _cross >= 0f ? bank : -bank;
-        }
-
-        private float RudderToHeading(Vessel vessel, float heading)
-        {
-            float error = Mathf.DeltaAngle(vessel.GetHeading(), heading) * Mathf.Deg2Rad;
-            Vector3 body;
-            float yawRate = vessel.TryGetBodyRates(out body) ? body.z : 0f;
-            float q = Mathf.Max(vessel.GetDynamicRatio(), 1f);
-            return Mathf.Clamp(((SteerGain * error) - (SteerDamp * yawRate)) / q, -1f, 1f);
         }
 
         private void FlyVertical(Vessel vessel, FlightCtrlState ctrl, float dt)
@@ -723,18 +709,7 @@ namespace AutopilotCore
             _throttleOut = _phase == Phase.Flare
                 ? Mathf.MoveTowards(_throttleOut, 0f, IdleRate * dt)
                 : _throttle.Step(vessel.GetAeroIasKt(), _speedTarget, _throttleOut, dt);
-            ApplyThrottle(vessel, ctrl);
-        }
-
-        // KSP restores the active vessel's throttle from the lever every frame, so the lever follows
-        // the output; it also stays at idle when the autoland lets go.
-        private void ApplyThrottle(Vessel vessel, FlightCtrlState ctrl)
-        {
-            ctrl.mainThrottle = _throttleOut;
-            if (vessel.isActiveVessel && FlightInputHandler.state != null)
-            {
-                FlightInputHandler.state.mainThrottle = _throttleOut;
-            }
+            ThrottleControl.Apply(vessel, ctrl, _throttleOut);
         }
 
         private void Rollout(Vessel vessel, FlightCtrlState ctrl, float dt)
@@ -742,7 +717,7 @@ namespace AutopilotCore
             _groundTime += dt;
             _speedTarget = 0f;
             _throttleOut = 0f;
-            ApplyThrottle(vessel, ctrl);
+            ThrottleControl.Apply(vessel, ctrl, _throttleOut);
             ctrl.roll = 0f;
 
             // Main gear ahead of the CoM pitches the nose up on contact, so the attitude is held down actively.
@@ -764,17 +739,8 @@ namespace AutopilotCore
                 ctrl.pitch = _groundPitch;
             }
 
-            // The aim point moves out with speed, and the gains fall with dynamic pressure as the rudder gains authority.
+            _desiredTrack = _steering.Steer(vessel, ctrl, _runway.Course, _cross, dt);
             float groundSpeed = (float)vessel.horizontalSrfSpeed;
-            float lookahead = Mathf.Max(SteerLookahead, SteerLookaheadTime * groundSpeed);
-            float steerOffset = Mathf.Clamp(-Mathf.Atan(_cross / lookahead) * Mathf.Rad2Deg, -MaxSteerOffset, MaxSteerOffset);
-            _desiredTrack = Mathf.Repeat(_runway.Course + steerOffset, 360f);
-            float steer = RudderToHeading(vessel, _desiredTrack);
-            ctrl.yaw = steer;
-
-            // wheelSteer has the opposite sign of yaw.
-            ctrl.wheelSteer = -steer * Mathf.Clamp(WheelSteerSpeed / Mathf.Max(groundSpeed, 1f), 0.1f, 1f);
-
             if (_groundTime < BrakeDelay)
             {
                 return;

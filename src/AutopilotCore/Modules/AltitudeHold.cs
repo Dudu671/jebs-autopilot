@@ -30,6 +30,13 @@ namespace AutopilotCore
         public float TargetFt
         {
             get { return _targetFt.Value; }
+            set { _targetFt.Value = value; }
+        }
+
+        public float VsLimitFpm
+        {
+            get { return _vsLimitFpm.Value; }
+            set { _vsLimitFpm.Value = value; }
         }
 
         public string Summary

@@ -17,19 +17,26 @@ namespace AutopilotCore
         public float Value
         {
             get { return _value; }
+            set
+            {
+                _value = value;
+                _text = value.ToString("G", CultureInfo.InvariantCulture);
+            }
         }
 
-        public void Draw(string label)
+        // True when the pilot typed into the field.
+        public bool Draw(string label)
         {
-            Draw(label, 110f);
+            return Draw(label, 110f);
         }
 
-        public void Draw(string label, float labelWidth)
+        public bool Draw(string label, float labelWidth)
         {
             GUILayout.BeginHorizontal();
             GUILayout.Label(label, GUILayout.Width(labelWidth));
             string next = GUILayout.TextField(_text, GUILayout.MinWidth(80f));
-            if (next != _text)
+            bool typed = next != _text;
+            if (typed)
             {
                 _text = next;
                 float parsed;
@@ -40,6 +47,7 @@ namespace AutopilotCore
             }
 
             GUILayout.EndHorizontal();
+            return typed;
         }
     }
 }

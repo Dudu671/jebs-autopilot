@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace AutopilotCore
 {
     // Autopilot state and control loop of one vessel.
@@ -5,14 +7,28 @@ namespace AutopilotCore
     {
         private readonly ModuleManager _modules = new ModuleManager();
         private readonly FlyByWire _flyByWire = new FlyByWire();
+        private readonly List<IFlightProcedure> _procedures = new List<IFlightProcedure>();
         private readonly NavHold _nav;
-        private readonly Autoland _autoland;
         private Vessel _vessel;
 
         public VesselPilot(Vessel vessel)
         {
             _nav = _modules.Find<NavHold>();
-            _autoland = _modules.Find<Autoland>();
+            for (int i = 0; i < _modules.Modules.Count; i++)
+            {
+                IFlightProcedure procedure = _modules.Modules[i] as IFlightProcedure;
+                if (procedure != null)
+                {
+                    _procedures.Add(procedure);
+                }
+            }
+
+            Takeoff takeoff = _modules.Find<Takeoff>();
+            if (takeoff != null)
+            {
+                takeoff.Bind(_modules.Find<HeadingHold>(), _modules.Find<AltitudeHold>(), _modules.Find<SpeedHold>());
+            }
+
             _vessel = vessel;
             _vessel.OnFlyByWire += Fly;
         }
@@ -59,10 +75,23 @@ namespace AutopilotCore
             // Off the active vessel ctrl still holds last frame's output, not pilot input.
             _flyByWire.Apply(_vessel, ctrl, _vessel.isActiveVessel, pitchOwned, rollOwned);
             _modules.UpdateAll(_vessel, ctrl);
-            if (_autoland == null || !_autoland.OwnsRudder)
+            if (!RudderOwned())
             {
                 _flyByWire.ReassertYaw(ctrl);
             }
+        }
+
+        private bool RudderOwned()
+        {
+            for (int i = 0; i < _procedures.Count; i++)
+            {
+                if (_procedures[i].OwnsRudder)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

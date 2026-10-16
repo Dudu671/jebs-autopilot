@@ -89,7 +89,7 @@ namespace AutopilotCore
                     modules.Find<HeadingHold>(), modules.Find<NavHold>(), modules.Find<HoldPattern>()),
                 new ModuleGroup("Vertical", new[] { "ALT", "PITCH" }, modules.Find<AltitudeHold>(), modules.Find<PitchHold>()),
                 new ModuleGroup("Speed", null, modules.Find<SpeedHold>()),
-                new ModuleGroup("Approach", null, modules.Find<Autoland>()),
+                new ModuleGroup("Takeoff & landing", new[] { "TAKEOFF", "LAND" }, modules.Find<Takeoff>(), modules.Find<Autoland>()),
             };
         }
 

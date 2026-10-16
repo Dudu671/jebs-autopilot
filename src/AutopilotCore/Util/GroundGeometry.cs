@@ -5,7 +5,7 @@ using UnityEngine;
 namespace AutopilotCore
 {
     // Where the vessel meets a level runway: its lowest point, wheels at full suspension extension,
-    // and how far the nose can rise, pivoting on the lowest wheel, before anything aft of it touches.
+    // and how far the nose can rise, pivoting on the main wheels, before anything aft of them touches.
     // The collider list is refreshed every second, since gear deploys and parts break off.
     public sealed class GroundGeometry
     {
@@ -14,8 +14,12 @@ namespace AutopilotCore
         // Points this close behind the pivot belong to the gear itself.
         private const float MinAftDistance = 0.5f;
 
+        // Wheels this close (m) to the lowest one count as touching.
+        private const float PivotTolerance = 0.3f;
+
         private readonly List<Collider> _colliders = new List<Collider>();
         private readonly List<Vector3> _points = new List<Vector3>();
+        private readonly List<Vector3> _wheels = new List<Vector3>();
         private readonly Vector3[] _corners = new Vector3[8];
         private Guid _vesselId;
         private int _partCount = -1;
@@ -38,9 +42,9 @@ namespace AutopilotCore
             Vector3 up = vessel.upAxis;
             Vector3 com = vessel.CoM;
             _points.Clear();
+            _wheels.Clear();
             double lowest = 0.0;
-            Vector3 pivot = com;
-            double pivotHeight = double.MaxValue;
+            double lowestWheel = double.MaxValue;
             for (int i = 0; i < _colliders.Count; i++)
             {
                 Collider collider = _colliders[i];
@@ -55,12 +59,8 @@ namespace AutopilotCore
                     Vector3 bottom = WheelBottom(wheel, up);
                     double height = Vector3.Dot(bottom - com, up);
                     lowest = Math.Min(lowest, height);
-                    if (height < pivotHeight)
-                    {
-                        pivotHeight = height;
-                        pivot = bottom;
-                    }
-
+                    lowestWheel = Math.Min(lowestWheel, height);
+                    _wheels.Add(bottom);
                     continue;
                 }
 
@@ -73,19 +73,41 @@ namespace AutopilotCore
             }
 
             LowestAltitude = vessel.mainBody.GetAltitude(vessel.CoMD) + lowest;
-            TailStrikePitch = pivotHeight < double.MaxValue ? vessel.GetPitch() + PitchMargin(vessel, pivot, up) : float.PositiveInfinity;
-        }
-
-        // Smallest nose-up rotation about the pivot that brings a point aft of it down to the pivot's level.
-        private float PitchMargin(Vessel vessel, Vector3 pivot, Vector3 up)
-        {
             Vector3 forward = Vector3.ProjectOnPlane(vessel.ReferenceTransform.up, up);
-            if (forward.sqrMagnitude < 1e-6f)
+            if (_wheels.Count == 0 || forward.sqrMagnitude < 1e-6f)
             {
-                return float.PositiveInfinity;
+                TailStrikePitch = float.PositiveInfinity;
+                return;
             }
 
             forward.Normalize();
+            Vector3 pivot = Pivot(com, up, forward, lowestWheel);
+            TailStrikePitch = vessel.GetPitch() + PitchMargin(pivot, up, forward);
+        }
+
+        // The wheel the nose rises about: the aftmost of those near the lowest. On a level runway
+        // every wheel is about as low, and the lowest alone could be the nose wheel.
+        private Vector3 Pivot(Vector3 com, Vector3 up, Vector3 forward, double lowestWheel)
+        {
+            Vector3 pivot = _wheels[0];
+            float aftmost = float.NegativeInfinity;
+            for (int i = 0; i < _wheels.Count; i++)
+            {
+                Vector3 d = _wheels[i] - com;
+                float aft = -Vector3.Dot(d, forward);
+                if (Vector3.Dot(d, up) <= lowestWheel + PivotTolerance && aft > aftmost)
+                {
+                    aftmost = aft;
+                    pivot = _wheels[i];
+                }
+            }
+
+            return pivot;
+        }
+
+        // Smallest nose-up rotation about the pivot that brings a point aft of it down to the pivot's level.
+        private float PitchMargin(Vector3 pivot, Vector3 up, Vector3 forward)
+        {
             float margin = float.PositiveInfinity;
             for (int i = 0; i < _points.Count; i++)
             {

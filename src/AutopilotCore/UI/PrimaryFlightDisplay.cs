@@ -369,10 +369,10 @@ namespace AutopilotCore
         {
             c.FillRect(new Rect(0f, 0f, CanvasWidth, 28f), new Color(0.02f, 0.02f, 0.03f));
             DrawFmaCell(c, 0, d.SpeedOn, "SPD", d.SpeedTargetKt.ToString("0"));
-            if (d.LandOn)
+            if (d.ProcedureOn)
             {
-                DrawFmaCell(c, 1, true, d.LandLateral, d.LandRunway);
-                DrawFmaCell(c, 2, true, d.LandVertical, "");
+                DrawFmaCell(c, 1, true, d.ProcedureLateral, d.ProcedureLateralValue);
+                DrawFmaCell(c, 2, true, d.ProcedureVertical, "");
                 DrawFmaCell(c, 3, false, "PIT", "");
                 return;
             }

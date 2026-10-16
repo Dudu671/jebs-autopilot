@@ -9,7 +9,7 @@ namespace AutopilotCore
         public const float DefaultMaxLoad = 7f;
         public const float DefaultMinLoad = -3f;
 
-        private const float MaxAoa = 20f;
+        public const float MaxAoa = 20f;
         private const float MinAoa = -12f;
         private const float AoaPush = 4f;
         private const float MaxRate = 1f;

@@ -13,11 +13,16 @@ namespace AutopilotCore
         // Inset of the text drawn over a section header button.
         private const int HeaderInset = 8;
 
+        // Font size assumed when the skin leaves it to the font, and the caption's brightness.
+        private const int CaptionBaseSize = 13;
+        private const float CaptionDim = 0.7f;
+
         private static GUISkin _skin;
         private static GUIStyle _toggle;
         private static GUIStyle _toggleButton;
         private static GUIStyle _labelLeft;
         private static GUIStyle _labelRight;
+        private static GUIStyle _caption;
         private static GUIStyle _headerTitle;
         private static GUIStyle _headerSummary;
         private static GUIStyle _headerSummaryOn;
@@ -60,6 +65,16 @@ namespace AutopilotCore
             }
         }
 
+        // Smaller, dimmer note under a control.
+        public static GUIStyle Caption
+        {
+            get
+            {
+                Refresh();
+                return _caption;
+            }
+        }
+
         public static GUIStyle HeaderTitle
         {
             get
@@ -88,6 +103,10 @@ namespace AutopilotCore
             _toggleButton = Green(new GUIStyle(GUI.skin.button));
             _labelLeft = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft };
             _labelRight = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperRight };
+            _caption = new GUIStyle(_labelLeft);
+            _caption.fontSize = Mathf.Max(9, (GUI.skin.label.fontSize > 0 ? GUI.skin.label.fontSize : CaptionBaseSize) - 2);
+            _caption.normal.textColor = GUI.skin.label.normal.textColor * CaptionDim;
+            _caption.margin.top = 0;
             _headerTitle = Header(TextAnchor.MiddleLeft);
             _headerSummary = Header(TextAnchor.MiddleRight);
             _headerSummaryOn = Header(TextAnchor.MiddleRight);
