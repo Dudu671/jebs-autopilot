@@ -16,6 +16,8 @@ namespace AutopilotHost
         private const BindingFlags Statics = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 
         private static readonly Dictionary<Guid, Entry> Cache = new Dictionary<Guid, Entry>();
+        private static readonly object[] ClimoArguments = new object[3];
+        private static readonly object[] PointArguments = new object[1];
 
         private static bool _searched;
         private static bool _bound;
@@ -123,8 +125,8 @@ namespace AutopilotHost
             }
 
             object atm = climo
-                ? _climoAtm.Invoke(null, new object[] { vessel.latitude, vessel.longitude, vessel.altitude })
-                : _pointAtm.Invoke(null, new object[] { vessel.altitude });
+                ? _climoAtm.Invoke(null, ClimoArgs(vessel))
+                : _pointAtm.Invoke(null, PointArgs(vessel));
             AtmFields fields = climo ? _climoFields : _pointFields;
             double east = Read(fields.WindX, atm);
             double north = Read(fields.WindY, atm);
@@ -152,6 +154,21 @@ namespace AutopilotHost
             entry.Pressure = Flag(_allowThermo) ? Read(fields.Pressure, atm) : vessel.staticPressurekPa * 1000.0;
             entry.Valid = true;
             return entry;
+        }
+
+        // Argument arrays reused across calls; Compute runs per vessel every physics step.
+        private static object[] ClimoArgs(Vessel vessel)
+        {
+            ClimoArguments[0] = vessel.latitude;
+            ClimoArguments[1] = vessel.longitude;
+            ClimoArguments[2] = vessel.altitude;
+            return ClimoArguments;
+        }
+
+        private static object[] PointArgs(Vessel vessel)
+        {
+            PointArguments[0] = vessel.altitude;
+            return PointArguments;
         }
 
         private static void EnsureBound()

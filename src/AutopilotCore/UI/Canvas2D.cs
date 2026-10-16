@@ -25,6 +25,9 @@ namespace AutopilotCore
 
         private const int MaxVertices = 128;
 
+        private static readonly int ClipRectId = Shader.PropertyToID("_ClipRect");
+        private static readonly int GuiZTestId = Shader.PropertyToID("unity_GUIZTestMode");
+
         private readonly int _width;
         private readonly int _height;
         private readonly Vertex[] _input = new Vertex[MaxVertices];
@@ -86,8 +89,8 @@ namespace AutopilotCore
             _previousTarget = RenderTexture.active;
             RenderTexture.active = _target;
             // Map view leaves UI clip and depth-test state that discards this texture.
-            _previousClip = Shader.GetGlobalVector("_ClipRect");
-            _previousGuiZTest = Shader.GetGlobalFloat("unity_GUIZTestMode");
+            _previousClip = Shader.GetGlobalVector(ClipRectId);
+            _previousGuiZTest = Shader.GetGlobalFloat(GuiZTestId);
             ApplyGuiDrawState();
             GL.Viewport(new Rect(0f, 0f, _width, _height));
             GL.PushMatrix();
@@ -102,8 +105,8 @@ namespace AutopilotCore
         {
             Flush();
             GL.PopMatrix();
-            Shader.SetGlobalVector("_ClipRect", _previousClip);
-            Shader.SetGlobalFloat("unity_GUIZTestMode", _previousGuiZTest);
+            Shader.SetGlobalVector(ClipRectId, _previousClip);
+            Shader.SetGlobalFloat(GuiZTestId, _previousGuiZTest);
             RenderTexture.active = _previousTarget;
             _previousTarget = null;
             _activeMaterial = null;
@@ -444,8 +447,8 @@ namespace AutopilotCore
 
         private static void ApplyGuiDrawState()
         {
-            Shader.SetGlobalVector("_ClipRect", new Vector4(-1e8f, -1e8f, 1e8f, 1e8f));
-            Shader.SetGlobalFloat("unity_GUIZTestMode", (float)CompareFunction.Always);
+            Shader.SetGlobalVector(ClipRectId, new Vector4(-1e8f, -1e8f, 1e8f, 1e8f));
+            Shader.SetGlobalFloat(GuiZTestId, (float)CompareFunction.Always);
         }
 
         private void Flush()

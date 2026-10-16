@@ -236,8 +236,9 @@ namespace AutopilotCore
 
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
-            // Vref is shown before engaging, and follows fuel burn and gear until the flare.
-            if (vessel != null && vessel.mainBody != null && (!_active || _phase < Phase.Flare))
+            // Vref is shown before engaging, and follows fuel burn and gear until the flare. Only the active
+            // vessel's window shows it, so idle vessels skip the estimate.
+            if (vessel != null && vessel.mainBody != null && (_active ? _phase < Phase.Flare : vessel.isActiveVessel))
             {
                 Estimate(vessel);
             }

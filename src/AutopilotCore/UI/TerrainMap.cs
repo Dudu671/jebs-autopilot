@@ -6,27 +6,38 @@ namespace AutopilotCore
 {
     // Terrain map around a point in surface colors with relief shading, sampled incrementally so
     // map rebuilds never stall a frame. Azimuthal equidistant around the center, so it holds up at the poles.
+    // Terrain height is the expensive sample, so a rebuild copies every pixel of the last map that was
+    // sampled at the same point, and samples coarse to fine so a new area shows early.
     public sealed class TerrainMap
     {
         private const int Size = 256;
+        private const int Total = Size * Size;
         private const float RecenterFraction = 0.3f;
         private const float Relief = 3f;
         private const float Dim = 0.8f;
 
-        private readonly float[] _heights = new float[Size * Size];
-        private readonly Color32[] _colors = new Color32[Size * Size];
-        private readonly Color32[] _pixels = new Color32[Size * Size];
+        // A pixel of the last map is reused when it was sampled this close (cells) to the new pixel's point.
+        // The check is against where it was sampled, so copies of copies never drift further. The two
+        // projections part with distance from the center, so wide maps resample their edges.
+        private const float ReuseTolerance = 0.35f;
+
+        // Sampling passes, coarse to fine; a preview is shown after each pass from this stride on.
+        private const int FirstPreviewStride = 4;
+        private static readonly int[] Strides = { 16, 8, 4, 2, 1 };
+        private static readonly int[] PassEnds = new int[Strides.Length];
+        private static readonly int[] Order = BuildOrder();
+
+        private readonly Color32[] _pixels = new Color32[Total];
         private readonly SurfaceColors _surface = new SurfaceColors();
         private readonly Stopwatch _stopwatch = new Stopwatch();
+        private Layer _building = new Layer();
+        private Layer _last = new Layer();
         private Texture2D _texture;
 
-        private bool _building;
+        private bool _isBuilding;
+        private bool _preview;
         private int _next;
-        private CelestialBody _buildBody;
-        private bool _hasColors;
-        private double _buildLat;
-        private double _buildLon;
-        private float _buildHalf;
+        private int _pass;
 
         public bool HasMap { get; private set; }
         public CelestialBody Body { get; private set; }
@@ -41,12 +52,12 @@ namespace AutopilotCore
 
         public bool Building
         {
-            get { return _building; }
+            get { return _isBuilding; }
         }
 
         public float Progress
         {
-            get { return _building ? _next / (float)(Size * Size) : 1f; }
+            get { return _isBuilding ? _next / (float)Total : 1f; }
         }
 
         public void Update(CelestialBody body, double lat, double lon, float halfSizeM, float budgetMs)
@@ -58,16 +69,16 @@ namespace AutopilotCore
 
             if (NeedsNewMap(body, lat, lon, halfSizeM))
             {
-                _building = true;
+                // A preview only helps where the map shown does not cover the new one: a new body, or zooming out.
+                _preview = !HasMap || Body != body || halfSizeM > HalfSizeM + 1f;
+                _isBuilding = true;
                 _next = 0;
-                _buildBody = body;
-                _buildLat = lat;
-                _buildLon = lon;
-                _buildHalf = halfSizeM;
-                _hasColors = _surface.Prepare(body);
+                _pass = 0;
+                SnapToLast(body, halfSizeM, ref lat, ref lon);
+                _building.Start(body, lat, lon, halfSizeM, _surface.Prepare(body));
             }
 
-            if (_building)
+            if (_isBuilding)
             {
                 Step(budgetMs);
             }
@@ -76,7 +87,7 @@ namespace AutopilotCore
         // East/north offset in meters of (lat, lon) from the displayed map center.
         public Vector2 OffsetMeters(double lat, double lon)
         {
-            return Offset(Body, CenterLat, CenterLon, lat, lon);
+            return Body == null ? Vector2.zero : NavMath.LocalOffset(Body.Radius, CenterLat, CenterLon, lat, lon);
         }
 
         public void Dispose()
@@ -88,15 +99,16 @@ namespace AutopilotCore
             }
 
             _surface.Dispose();
+            _last.Valid = false;
             HasMap = false;
         }
 
         private bool NeedsNewMap(CelestialBody body, double lat, double lon, float halfSizeM)
         {
-            if (_building)
+            if (_isBuilding)
             {
                 // Let a build finish after small moves; it is recentered on the next check.
-                return _buildBody != body || Mathf.Abs(_buildHalf - halfSizeM) > 1f;
+                return _building.Body != body || Mathf.Abs(_building.HalfSize - halfSizeM) > 1f;
             }
 
             if (!HasMap || Body != body || Mathf.Abs(HalfSizeM - halfSizeM) > 1f)
@@ -108,36 +120,43 @@ namespace AutopilotCore
             return Mathf.Max(Mathf.Abs(offset.x), Mathf.Abs(offset.y)) > HalfSizeM * RecenterFraction;
         }
 
-        private static Vector2 Offset(CelestialBody body, double lat0, double lon0, double lat, double lon)
-        {
-            return body == null ? Vector2.zero : NavMath.LocalOffset(body.Radius, lat0, lon0, lat, lon);
-        }
-
         private void Step(float budgetMs)
         {
             _stopwatch.Reset();
             _stopwatch.Start();
 
-            int total = Size * Size;
-            double radius = _buildBody.Radius;
-            bool hasTerrain = _buildBody.pqsController != null;
+            Layer map = _building;
+            double radius = map.Body.Radius;
+            bool hasTerrain = map.Body.pqsController != null;
+            bool reuse = _last.Valid && _last.Body == map.Body && Mathf.Abs(_last.HalfSize - map.HalfSize) < 1f &&
+                         _last.HasColors == map.HasColors;
 
-            while (_next < total)
+            while (_next < Total)
             {
-                int i = _next % Size;
-                int j = _next / Size;
-                double east = (-1.0 + ((i + 0.5) * 2.0 / Size)) * _buildHalf;
-                double north = (-1.0 + ((j + 0.5) * 2.0 / Size)) * _buildHalf;
+                int idx = Order[_next];
+                double east = (-1.0 + (((idx % Size) + 0.5) * 2.0 / Size)) * map.HalfSize;
+                double north = (-1.0 + (((idx / Size) + 0.5) * 2.0 / Size)) * map.HalfSize;
                 double lat;
                 double lon;
-                NavMath.FromLocal(radius, _buildLat, _buildLon, east, north, out lat, out lon);
-                _heights[_next] = hasTerrain ? (float)SampleHeight(_buildBody, lat, lon) : 0f;
-                if (_hasColors)
+                NavMath.FromLocal(radius, map.CenterLat, map.CenterLon, east, north, out lat, out lon);
+                if (!reuse || !Reuse(idx, radius, lat, lon))
                 {
-                    _colors[_next] = _surface.Sample(lat, lon);
+                    map.Heights[idx] = hasTerrain ? (float)SampleHeight(map.Body, lat, lon) : 0f;
+                    map.Colors[idx] = map.HasColors ? _surface.Sample(lat, lon) : default(Color32);
+                    map.Lats[idx] = lat;
+                    map.Lons[idx] = lon;
                 }
 
                 _next++;
+                if (_next == PassEnds[_pass])
+                {
+                    if (_preview && Strides[_pass] <= FirstPreviewStride && _next < Total)
+                    {
+                        Render(Strides[_pass]);
+                    }
+
+                    _pass++;
+                }
 
                 if ((_next & 31) == 0 && _stopwatch.Elapsed.TotalMilliseconds > budgetMs)
                 {
@@ -145,22 +164,75 @@ namespace AutopilotCore
                 }
             }
 
-            Finish();
+            Render(1);
+            _building.Valid = true;
+            Layer finished = _building;
+            _building = _last;
+            _last = finished;
+            _isBuilding = false;
         }
 
-        private void Finish()
+        // A recentered map is centered on a pixel of the last one, so its pixels fall on the old points
+        // instead of between them; the center stays within half a pixel of the requested point.
+        private void SnapToLast(CelestialBody body, float halfSizeM, ref double lat, ref double lon)
         {
-            bool ocean = _buildBody.ocean;
-            float cell = 2f * _buildHalf / Size;
-            for (int j = 0; j < Size; j++)
+            if (!_last.Valid || _last.Body != body || Mathf.Abs(_last.HalfSize - halfSizeM) >= 1f)
             {
-                for (int i = 0; i < Size; i++)
+                return;
+            }
+
+            float cell = 2f * _last.HalfSize / Size;
+            Vector2 offset = NavMath.LocalOffset(body.Radius, _last.CenterLat, _last.CenterLon, lat, lon);
+            double east = Mathf.Round(offset.x / cell) * cell;
+            double north = Mathf.Round(offset.y / cell) * cell;
+            NavMath.FromLocal(body.Radius, _last.CenterLat, _last.CenterLon, east, north, out lat, out lon);
+        }
+
+        // Copies the pixel of the last map sampled at about this point, if there is one.
+        private bool Reuse(int idx, double radius, double lat, double lon)
+        {
+            Layer last = _last;
+            float cell = 2f * last.HalfSize / Size;
+            Vector2 offset = NavMath.LocalOffset(radius, last.CenterLat, last.CenterLon, lat, lon);
+            int i = Mathf.RoundToInt((offset.x / cell) + (Size * 0.5f) - 0.5f);
+            int j = Mathf.RoundToInt((offset.y / cell) + (Size * 0.5f) - 0.5f);
+            if (i < 0 || j < 0 || i >= Size || j >= Size)
+            {
+                return false;
+            }
+
+            int k = (j * Size) + i;
+            if (NavMath.Distance(radius, last.Lats[k], last.Lons[k], lat, lon) > ReuseTolerance * cell)
+            {
+                return false;
+            }
+
+            Layer map = _building;
+            map.Heights[idx] = last.Heights[k];
+            map.Colors[idx] = last.Colors[k];
+            map.Lats[idx] = last.Lats[k];
+            map.Lons[idx] = last.Lons[k];
+            return true;
+        }
+
+        // Draws the map from the points sampled every `step` pixels, each filling its block, and shows it.
+        private void Render(int step)
+        {
+            Layer map = _building;
+            bool ocean = map.Body.ocean;
+            float cell = 2f * map.HalfSize / Size;
+            for (int j = 0; j < Size; j += step)
+            {
+                for (int i = 0; i < Size; i += step)
                 {
                     int idx = (j * Size) + i;
-                    float h = _heights[idx];
+                    float h = map.Heights[idx];
                     bool water = ocean && h <= 0f;
-                    float shade = water ? 1f : Shade(i, j, cell);
-                    _pixels[idx] = _hasColors ? Tint(_colors[idx], shade * Dim) : Fallback(h, water, ocean && IsCoast(i, j), shade);
+                    float shade = water ? 1f : Shade(i, j, step, cell);
+                    Color32 color = map.HasColors
+                        ? Tint(map.Colors[idx], shade * Dim)
+                        : Fallback(h, water, ocean && IsCoast(i, j, step), shade);
+                    Fill(i, j, step, color);
                 }
             }
 
@@ -175,29 +247,45 @@ namespace AutopilotCore
             _texture.SetPixels32(_pixels);
             _texture.Apply(true);
 
-            Body = _buildBody;
-            CenterLat = _buildLat;
-            CenterLon = _buildLon;
-            HalfSizeM = _buildHalf;
+            Body = map.Body;
+            CenterLat = map.CenterLat;
+            CenterLon = map.CenterLon;
+            HalfSizeM = map.HalfSize;
             HasMap = true;
-            _building = false;
+        }
+
+        private void Fill(int i, int j, int step, Color32 color)
+        {
+            int jEnd = Mathf.Min(j + step, Size);
+            int iEnd = Mathf.Min(i + step, Size);
+            for (int y = j; y < jEnd; y++)
+            {
+                int row = y * Size;
+                for (int x = i; x < iEnd; x++)
+                {
+                    _pixels[row + x] = color;
+                }
+            }
         }
 
         // Lambert shading with light from the northwest, relative to flat ground (1 = flat), relief exaggerated.
-        private float Shade(int i, int j, float cell)
+        private float Shade(int i, int j, int step, float cell)
         {
-            float dzdx = (Height(i + 1, j) - Height(i - 1, j)) / (2f * cell) * Relief;
-            float dzdy = (Height(i, j + 1) - Height(i, j - 1)) / (2f * cell) * Relief;
+            float span = 2f * step * cell;
+            float dzdx = (Height(i + step, j, step) - Height(i - step, j, step)) / span * Relief;
+            float dzdy = (Height(i, j + step, step) - Height(i, j - step, step)) / span * Relief;
             Vector3 normal = new Vector3(-dzdx, -dzdy, 1f).normalized;
             Vector3 light = new Vector3(-1f, 1f, 1.4f).normalized;
             return Mathf.Clamp(Vector3.Dot(normal, light) / light.z, 0.45f, 1.5f);
         }
 
-        private float Height(int i, int j)
+        // Height at the nearest sampled point inside the map.
+        private float Height(int i, int j, int step)
         {
-            i = Mathf.Clamp(i, 0, Size - 1);
-            j = Mathf.Clamp(j, 0, Size - 1);
-            return Mathf.Max(0f, _heights[(j * Size) + i]);
+            int last = (Size - 1) - ((Size - 1) % step);
+            i = Mathf.Clamp(i, 0, last);
+            j = Mathf.Clamp(j, 0, last);
+            return Mathf.Max(0f, _building.Heights[(j * Size) + i]);
         }
 
         private static Color32 Tint(Color32 color, float k)
@@ -244,9 +332,9 @@ namespace AutopilotCore
             return body.TerrainAltitude(latitude, longitude, true);
         }
 
-        private bool IsCoast(int i, int j)
+        private bool IsCoast(int i, int j, int step)
         {
-            return IsWater(i - 1, j) || IsWater(i + 1, j) || IsWater(i, j - 1) || IsWater(i, j + 1);
+            return IsWater(i - step, j) || IsWater(i + step, j) || IsWater(i, j - step) || IsWater(i, j + step);
         }
 
         private bool IsWater(int i, int j)
@@ -256,7 +344,60 @@ namespace AutopilotCore
                 return false;
             }
 
-            return _heights[(j * Size) + i] <= 0f;
+            return _building.Heights[(j * Size) + i] <= 0f;
+        }
+
+        // Pixel indices pass by pass: every 16th pixel, then the 8th not yet taken, down to every pixel.
+        private static int[] BuildOrder()
+        {
+            int[] order = new int[Total];
+            bool[] taken = new bool[Total];
+            int n = 0;
+            for (int pass = 0; pass < Strides.Length; pass++)
+            {
+                int stride = Strides[pass];
+                for (int j = 0; j < Size; j += stride)
+                {
+                    for (int i = 0; i < Size; i += stride)
+                    {
+                        int idx = (j * Size) + i;
+                        if (!taken[idx])
+                        {
+                            taken[idx] = true;
+                            order[n++] = idx;
+                        }
+                    }
+                }
+
+                PassEnds[pass] = n;
+            }
+
+            return order;
+        }
+
+        // One map's samples, with the point each pixel was actually sampled at, so a later map can reuse them.
+        private sealed class Layer
+        {
+            public readonly float[] Heights = new float[Total];
+            public readonly Color32[] Colors = new Color32[Total];
+            public readonly double[] Lats = new double[Total];
+            public readonly double[] Lons = new double[Total];
+            public CelestialBody Body;
+            public double CenterLat;
+            public double CenterLon;
+            public float HalfSize;
+            public bool HasColors;
+            public bool Valid;
+
+            public void Start(CelestialBody body, double lat, double lon, float halfSize, bool hasColors)
+            {
+                Body = body;
+                CenterLat = lat;
+                CenterLon = lon;
+                HalfSize = halfSize;
+                HasColors = hasColors;
+                Valid = false;
+            }
         }
     }
 }

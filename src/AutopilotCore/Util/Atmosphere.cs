@@ -26,6 +26,13 @@ namespace AutopilotCore
         private static FieldInfo _pointTemperature;
         private static FieldInfo _pointPressure;
 
+        private static Vessel _cachedVessel;
+        private static float _cachedFixedTime;
+        private static int _cachedFrame;
+        private static Vector3d _cachedWind;
+        private static double _cachedTemperature;
+        private static double _cachedPressure;
+
         public static bool Available
         {
             get
@@ -59,7 +66,24 @@ namespace AutopilotCore
             return (float)pressure;
         }
 
+        // One IAS reads wind, temperature and pressure separately, and the modules and instruments read
+        // them many times a frame; the air only changes with the physics step, so the last read is kept.
         private static Vector3d Read(Vessel vessel, out double temperatureK, out double pressurePa)
+        {
+            if (vessel != _cachedVessel || Time.fixedTime != _cachedFixedTime || Time.frameCount != _cachedFrame)
+            {
+                _cachedWind = Sample(vessel, out _cachedTemperature, out _cachedPressure);
+                _cachedVessel = vessel;
+                _cachedFixedTime = Time.fixedTime;
+                _cachedFrame = Time.frameCount;
+            }
+
+            temperatureK = _cachedTemperature;
+            pressurePa = _cachedPressure;
+            return _cachedWind;
+        }
+
+        private static Vector3d Sample(Vessel vessel, out double temperatureK, out double pressurePa)
         {
             temperatureK = vessel.atmosphericTemperature;
             pressurePa = vessel.staticPressurekPa * 1000.0;

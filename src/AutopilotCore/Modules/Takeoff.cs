@@ -215,8 +215,9 @@ namespace AutopilotCore
                 return;
             }
 
-            // The speeds are shown before engaging, and follow the vessel until it rotates.
-            if (!_active || _phase == Phase.Roll)
+            // The speeds are shown before engaging, and follow the vessel until it rotates. Only the active
+            // vessel's window shows them, so idle vessels skip the estimate.
+            if (_active ? _phase == Phase.Roll : vessel.isActiveVessel)
             {
                 Estimate(vessel);
             }

@@ -13,6 +13,10 @@ namespace AutopilotCore
         private const int ScrollAfter = 10;
         private const float ScrollHeight = 420f;
 
+        // Legs are drawn in chords of at most this arc (deg).
+        private const float LegStepDeg = 1f;
+        private const int MaxLegSteps = 180;
+
         private static readonly float[] RangesKm = { 5f, 10f, 20f, 50f, 100f, 200f, 500f };
         private static readonly string[] CompassLabels = { "N", "3", "6", "E", "12", "15", "S", "21", "24", "W", "30", "33" };
         private static readonly Rect MapArea = new Rect(6f, 60f, 448f, 414f);
@@ -380,6 +384,24 @@ namespace AutopilotCore
             return AircraftPos + Canvas2D.Rotate(local, _viewRot);
         }
 
+        // The great circle between two waypoints, which the projection around the aircraft bends unless it
+        // passes through the aircraft; drawn in short chords.
+        private void DrawLeg(Canvas2D c, double lat1, double lon1, double lat2, double lon2, float width, Color color)
+        {
+            float degrees = (float)(NavMath.Distance(1.0, lat1, lon1, lat2, lon2) * Mathf.Rad2Deg);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(degrees / LegStepDeg), 1, MaxLegSteps);
+            Vector2 previous = ToScreen(lat1, lon1);
+            for (int i = 1; i <= steps; i++)
+            {
+                double lat;
+                double lon;
+                NavMath.Interpolate(lat1, lon1, lat2, lon2, i / (double)steps, out lat, out lon);
+                Vector2 point = ToScreen(lat, lon);
+                c.Line(previous, point, width, color);
+                previous = point;
+            }
+        }
+
         private void DrawRoute(Canvas2D c)
         {
             if (_plan == null || _plan.Count == 0 || !_hasView)
@@ -393,8 +415,15 @@ namespace AutopilotCore
             {
                 double fromLat;
                 double fromLon;
-                Vector2 from = _nav.TryGetLegStart(out fromLat, out fromLon) ? ToScreen(fromLat, fromLon) : AircraftPos;
-                c.Line(from, ToScreen(_plan.Active.Latitude, _plan.Active.Longitude), 2f, Magenta);
+                if (_nav.TryGetLegStart(out fromLat, out fromLon))
+                {
+                    DrawLeg(c, fromLat, fromLon, _plan.Active.Latitude, _plan.Active.Longitude, 2f, Magenta);
+                }
+                else
+                {
+                    // A great circle through the aircraft, the center of the projection, is a straight line.
+                    c.Line(AircraftPos, ToScreen(_plan.Active.Latitude, _plan.Active.Longitude), 2f, Magenta);
+                }
             }
 
             for (int i = 1; i < _plan.Count; i++)
@@ -405,7 +434,7 @@ namespace AutopilotCore
                     continue;
                 }
 
-                c.Line(ToScreen(_plan[i - 1].Latitude, _plan[i - 1].Longitude), ToScreen(_plan[i].Latitude, _plan[i].Longitude), 1.5f, legColor);
+                DrawLeg(c, _plan[i - 1].Latitude, _plan[i - 1].Longitude, _plan[i].Latitude, _plan[i].Longitude, 1.5f, legColor);
             }
 
             for (int i = 0; i < _plan.Count; i++)

@@ -18,6 +18,7 @@ namespace AutopilotCore
         private const float PivotTolerance = 0.3f;
 
         private readonly List<Collider> _colliders = new List<Collider>();
+        private readonly List<Collider> _partColliders = new List<Collider>();
         private readonly List<Vector3> _points = new List<Vector3>();
         private readonly List<Vector3> _wheels = new List<Vector3>();
         private readonly Vector3[] _corners = new Vector3[8];
@@ -132,7 +133,10 @@ namespace AutopilotCore
             _colliders.Clear();
             for (int i = 0; i < vessel.parts.Count; i++)
             {
-                _colliders.AddRange(vessel.parts[i].GetComponentsInChildren<Collider>(true));
+                // The list overload fills a reused buffer instead of allocating an array per part.
+                _partColliders.Clear();
+                vessel.parts[i].GetComponentsInChildren(true, _partColliders);
+                _colliders.AddRange(_partColliders);
             }
         }
 

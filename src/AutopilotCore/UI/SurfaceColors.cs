@@ -4,7 +4,7 @@ using UnityEngine;
 namespace AutopilotCore
 {
     // Surface color of a body, read from its scaled-space (orbital view) texture. The texture is
-    // copied once into a readable one, and the lat/lon -> UV mapping is fitted from the scaled
+    // copied once into a plain array, and the lat/lon -> UV mapping is fitted from the scaled
     // mesh's own vertices, so no projection convention is assumed.
     public sealed class SurfaceColors : IDisposable
     {
@@ -12,7 +12,9 @@ namespace AutopilotCore
         private const int MaxSamples = 600;
 
         private CelestialBody _body;
-        private Texture2D _texture;
+        private Color32[] _colors;
+        private int _width;
+        private int _height;
         private bool _valid;
         private float _u0;
         private float _uSign;
@@ -41,21 +43,30 @@ namespace AutopilotCore
             return _valid;
         }
 
-        public Color Sample(double latitude, double longitude)
+        // Bilinear, wrapping in longitude, read from a plain array: Texture2D.GetPixelBilinear costs a call
+        // into the engine per sample.
+        public Color32 Sample(double latitude, double longitude)
         {
             float u = Mathf.Repeat(_u0 + (_uSign * (float)(longitude / 360.0)), 1f);
             float v = Mathf.Clamp01(_v0 + (_vSign * (float)(latitude / 180.0)));
-            return _texture.GetPixelBilinear(u, v);
+            float x = (u * _width) - 0.5f;
+            float y = Mathf.Clamp((v * _height) - 0.5f, 0f, _height - 1);
+            int x0 = Mathf.FloorToInt(x);
+            int y0 = Mathf.Min((int)y, _height - 2);
+            float fx = x - x0;
+            float fy = y - y0;
+            x0 = ((x0 % _width) + _width) % _width;
+            int x1 = (x0 + 1) % _width;
+            int row0 = Mathf.Max(y0, 0) * _width;
+            int row1 = Mathf.Min(y0 + 1, _height - 1) * _width;
+            Color32 bottom = Color32.LerpUnclamped(_colors[row0 + x0], _colors[row0 + x1], fx);
+            Color32 top = Color32.LerpUnclamped(_colors[row1 + x0], _colors[row1 + x1], fx);
+            return Color32.LerpUnclamped(bottom, top, fy);
         }
 
         public void Dispose()
         {
-            if (_texture != null)
-            {
-                UnityEngine.Object.Destroy(_texture);
-                _texture = null;
-            }
-
+            _colors = null;
             _body = null;
             _valid = false;
         }
@@ -167,21 +178,28 @@ namespace AutopilotCore
             int height = Math.Max(1, width * source.height / source.width);
             RenderTexture target = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
             RenderTexture previous = RenderTexture.active;
+            Texture2D copy = null;
             try
             {
                 Graphics.Blit(source, target);
                 RenderTexture.active = target;
-                _texture = new Texture2D(width, height, TextureFormat.RGB24, false);
-                _texture.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
-                _texture.Apply(false);
+                copy = new Texture2D(width, height, TextureFormat.RGB24, false);
+                copy.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
+                _colors = copy.GetPixels32();
+                _width = width;
+                _height = height;
             }
             finally
             {
                 RenderTexture.active = previous;
                 RenderTexture.ReleaseTemporary(target);
+                if (copy != null)
+                {
+                    UnityEngine.Object.Destroy(copy);
+                }
             }
 
-            return true;
+            return _height >= 2;
         }
     }
 }

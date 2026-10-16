@@ -36,6 +36,30 @@ namespace AutopilotCore
             return Math.Asin(Math.Sin(angularAP) * Math.Sin(bearingAP - bearingAB)) * radius;
         }
 
+        // Point a fraction of the way along the great circle from 1 to 2.
+        public static void Interpolate(double lat1, double lon1, double lat2, double lon2, double fraction, out double lat, out double lon)
+        {
+            double angle = Distance(1.0, lat1, lon1, lat2, lon2);
+            if (angle < 1e-9)
+            {
+                lat = lat1;
+                lon = lon1;
+                return;
+            }
+
+            double phi1 = lat1 * ToRad;
+            double phi2 = lat2 * ToRad;
+            double lambda1 = lon1 * ToRad;
+            double lambda2 = lon2 * ToRad;
+            double a = Math.Sin((1.0 - fraction) * angle) / Math.Sin(angle);
+            double b = Math.Sin(fraction * angle) / Math.Sin(angle);
+            double x = (a * Math.Cos(phi1) * Math.Cos(lambda1)) + (b * Math.Cos(phi2) * Math.Cos(lambda2));
+            double y = (a * Math.Cos(phi1) * Math.Sin(lambda1)) + (b * Math.Cos(phi2) * Math.Sin(lambda2));
+            double z = (a * Math.Sin(phi1)) + (b * Math.Sin(phi2));
+            lat = Math.Atan2(z, Math.Sqrt((x * x) + (y * y))) * ToDeg;
+            lon = Math.Atan2(y, x) * ToDeg;
+        }
+
         // Azimuthal equidistant east/north around a reference point: exact distance and bearing from
         // it, and no distortion blow-up near the poles.
         public static Vector2 LocalOffset(double radius, double latRef, double lonRef, double lat, double lon)
