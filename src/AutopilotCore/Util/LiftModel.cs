@@ -4,9 +4,10 @@ using UnityEngine;
 
 namespace AutopilotCore
 {
-    // Speeds at which the stock lift of every lifting surface carries the weight, for the vessel wings
-    // level on the ground. A nose-up rotation is evaluated as the relative wind tilted below the nose,
-    // leaving the airframe where it is. Body lift is left out, which errs on the fast side.
+    // Speeds at which the stock lift of every lifting surface carries the weight in level flight, wings
+    // level. Angles of attack are taken in the vessel's own frame, so it works on the ground and in the
+    // air: on a level runway the angle of attack is the pitch attitude. Body lift is left out, which
+    // errs on the fast side.
     public sealed class LiftModel
     {
         private const float ReferenceSpeed = 50f;
@@ -22,64 +23,66 @@ namespace AutopilotCore
 
         public bool Valid { get; private set; }
 
-        // True airspeeds (m/s): at the attitude of most lift up to the envelope's AoA limit, and at the requested attitude.
-        public float StallTas { get; private set; }
+        // IAS (kt): at the angle of attack of most lift up to the envelope's limit, and at the requested one.
+        public float StallKt { get; private set; }
 
-        public float LiftoffTas { get; private set; }
+        public float AttitudeKt { get; private set; }
 
         // Lift the game applies over the lift this model predicts, at the current velocity; NaN when too slow.
         public float Check { get; private set; }
 
-        // Pitch: the attitude (deg) for the liftoff speed.
-        public void Update(Vessel vessel, float pitch)
+        // Aoa: the angle of attack (deg) for AttitudeKt.
+        public void Update(Vessel vessel, float aoa)
         {
             Valid = false;
             Check = float.NaN;
             Refresh(vessel);
             double density = vessel.atmDensity;
-            if (_surfaces.Count == 0 || density <= 0.0 || vessel.ReferenceTransform == null)
+            Transform reference = vessel.ReferenceTransform;
+            if (_surfaces.Count == 0 || density <= 0.0 || reference == null)
             {
                 return;
             }
 
-            Vector3 up = vessel.upAxis;
-            Vector3 forward = Vector3.ProjectOnPlane(vessel.ReferenceTransform.up, up);
-            if (forward.sqrMagnitude < 1e-6f)
-            {
-                return;
-            }
-
-            forward.Normalize();
+            // transform.forward points out of the belly.
+            Vector3 forward = reference.up;
+            Vector3 dorsal = -reference.forward;
             float weight = (float)vessel.totalMass * vessel.GetGravity();
             float soundSpeed = (float)vessel.GetSpeedOfSound();
-            float current = vessel.GetPitch();
 
-            float bestRotation = 0f;
+            float bestAoa = 0f;
             float bestLift = float.NegativeInfinity;
-            for (float rotation = 0f; current + rotation <= Envelope.MaxAoa; rotation += ScanStep)
+            for (float alpha = 0f; alpha <= Envelope.MaxAoa; alpha += ScanStep)
             {
-                float lift = Lift(forward, up, rotation, ReferenceSpeed, density, soundSpeed);
+                float lift = Lift(forward, dorsal, alpha, ReferenceSpeed, density, soundSpeed);
                 if (lift > bestLift)
                 {
                     bestLift = lift;
-                    bestRotation = rotation;
+                    bestAoa = alpha;
                 }
             }
 
-            StallTas = Solve(forward, up, bestRotation, weight, density, soundSpeed);
-            LiftoffTas = Solve(forward, up, Mathf.Max(0f, pitch - current), weight, density, soundSpeed);
-            Valid = !float.IsInfinity(StallTas) && !float.IsInfinity(LiftoffTas);
+            float stall = Solve(forward, dorsal, bestAoa, weight, density, soundSpeed);
+            float attitude = Solve(forward, dorsal, aoa, weight, density, soundSpeed);
+            Valid = !float.IsInfinity(stall) && !float.IsInfinity(attitude);
+            StallKt = Ias(vessel, stall);
+            AttitudeKt = Ias(vessel, attitude);
             Check = Compare(vessel, density, soundSpeed);
         }
 
-        // Speed at which the lift at this rotation equals the weight; lift goes with speed squared, and
-        // the iterations take in the Mach curve.
-        private float Solve(Vector3 forward, Vector3 up, float rotation, float weight, double density, float soundSpeed)
+        private static float Ias(Vessel vessel, float tas)
+        {
+            return (float)VesselExtensions.CalibratedAirspeed(vessel, tas) * Units.KnotsPerMps;
+        }
+
+        // Speed at which the lift at this angle of attack equals the weight; lift goes with speed squared,
+        // and the iterations take in the Mach curve.
+        private float Solve(Vector3 forward, Vector3 dorsal, float aoa, float weight, double density, float soundSpeed)
         {
             float speed = ReferenceSpeed;
             for (int i = 0; i < SpeedIterations; i++)
             {
-                float lift = Lift(forward, up, rotation, speed, density, soundSpeed);
+                float lift = Lift(forward, dorsal, aoa, speed, density, soundSpeed);
                 if (lift <= 0f)
                 {
                     return float.PositiveInfinity;
@@ -91,13 +94,13 @@ namespace AutopilotCore
             return speed;
         }
 
-        // Vertical lift (kN) with the nose this many degrees above the current attitude, moving level at this speed.
-        private float Lift(Vector3 forward, Vector3 up, float rotation, float speed, double density, float soundSpeed)
+        // Lift (kN) normal to the flight path at this angle of attack and speed.
+        private float Lift(Vector3 forward, Vector3 dorsal, float aoa, float speed, double density, float soundSpeed)
         {
-            float rad = rotation * Mathf.Deg2Rad;
-            Vector3 wind = (forward * Mathf.Cos(rad)) - (up * Mathf.Sin(rad));
-            Vector3 liftUp = (up * Mathf.Cos(rad)) + (forward * Mathf.Sin(rad));
-            return Sum(wind * speed, liftUp, DynamicPressure(density, speed), speed / soundSpeed, false);
+            float rad = aoa * Mathf.Deg2Rad;
+            Vector3 velocity = (forward * Mathf.Cos(rad)) - (dorsal * Mathf.Sin(rad));
+            Vector3 normal = (dorsal * Mathf.Cos(rad)) + (forward * Mathf.Sin(rad));
+            return Sum(velocity * speed, normal, DynamicPressure(density, speed), speed / soundSpeed, false);
         }
 
         private float Compare(Vessel vessel, double density, float soundSpeed)

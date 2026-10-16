@@ -321,19 +321,14 @@ namespace AutopilotCore
                 return;
             }
 
-            _stallKt = Ias(vessel, _lift.StallTas);
-            _liftoffKt = Ias(vessel, _lift.LiftoffTas);
+            _stallKt = _lift.StallKt;
+            _liftoffKt = _lift.AttitudeKt;
             _calculatedVrKt = Mathf.Max(VrStallFactor * _stallKt, VrLiftoffFactor * _liftoffKt);
             float rounded = Mathf.Round(_calculatedVrKt);
             if (!_vrEdited && _vrField.Value != rounded)
             {
                 _vrField.Value = rounded;
             }
-        }
-
-        private static float Ias(Vessel vessel, float tas)
-        {
-            return (float)VesselExtensions.CalibratedAirspeed(vessel, tas) * Units.KnotsPerMps;
         }
 
         private bool Engage(Vessel vessel)

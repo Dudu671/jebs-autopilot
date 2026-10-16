@@ -5,8 +5,9 @@ namespace AutopilotCore
     // Lands on a KSC runway from anywhere. Without room for a straight-in, it flies a downwind leg at
     // pattern height two turn radii beside the centerline and turns final abeam a point short of the
     // FAF, descending to 1000 ft at the FAF. Then it follows the 3 degree glide path, flares within the
-    // tail clearance, and keeps the centerline braking to a stop. Heights are of the vessel's lowest
-    // point above the runway.
+    // tail clearance, and keeps the centerline braking to a stop, with reverse thrust when the engines have
+    // it. Heights are of the vessel's lowest point above the runway. The Vref field starts with the speed
+    // from the lift model and follows it until edited.
     public sealed class Autoland : IFlightProcedure
     {
         private enum Phase
@@ -99,6 +100,16 @@ namespace AutopilotCore
         private const float BrakeDelay = 2f;
         private const float StoppedSpeed = 0.5f;
 
+        // Reverse power once the reversers are out, from a second after touchdown down to this ground speed (m/s).
+        private const float ReverseDelay = 1f;
+        private const float ReverseCutoff = 20f;
+        private const float ReverseThrottle = 1f;
+
+        // Vref keeps a margin over the stall and over the speed that holds the weight at the touchdown attitude.
+        private const float VrefStallFactor = 1.3f;
+        private const float VrefTouchdownFactor = 1.1f;
+        private const float EstimateInterval = 0.5f;
+
         private static readonly string[] RunwayNames = { Runway.Ksc[0].Name, Runway.Ksc[1].Name };
 
         private readonly VerticalSpeedControl _vertical = new VerticalSpeedControl("Autoland");
@@ -107,12 +118,14 @@ namespace AutopilotCore
         private readonly ThrottleControl _throttle = new ThrottleControl();
         private readonly GroundGeometry _ground = new GroundGeometry();
         private readonly RunwaySteering _steering = new RunwaySteering();
-        private readonly FloatField _vref = new FloatField(70f);
+        private readonly LiftModel _lift = new LiftModel();
+        private readonly ThrustReversers _reversers = new ThrustReversers();
+        private readonly FloatField _vref = new FloatField(0f);
         private readonly FloatField _patternFt = new FloatField(2000f);
         private readonly FlightRecorder _recorder = new FlightRecorder(
             "autoland.csv",
             "t,phase,along_m,xtrack_m,desired_trk,trk_bias,track,hdg,height_ft,path_ft,clearance_ft,floor_ft,vs_fpm,vs_cmd_fpm," +
-            "ias,ias_target,bank,beta,pitch,pitch_cmd,tailstrike_pitch,throttle,rudder,steer,brakes",
+            "ias,ias_target,bank,beta,pitch,pitch_cmd,tailstrike_pitch,throttle,rudder,steer,brakes,reverser",
             true);
 
         private int _runwayIndex;
@@ -149,6 +162,11 @@ namespace AutopilotCore
         private float _derotateTarget;
         private float _derotateHold;
         private bool _noseDown;
+        private bool _reverseDone;
+
+        private bool _vrefEdited;
+        private float _calculatedVrefKt = float.NaN;
+        private float _nextEstimate;
 
         public string Name
         {
@@ -218,6 +236,12 @@ namespace AutopilotCore
 
         public void Update(Vessel vessel, FlightCtrlState ctrl)
         {
+            // Vref is shown before engaging, and follows fuel burn and gear until the flare.
+            if (vessel != null && vessel.mainBody != null && (!_active || _phase < Phase.Flare))
+            {
+                Estimate(vessel);
+            }
+
             if (!Enabled || vessel == null || vessel.mainBody == null)
             {
                 if (_active)
@@ -236,6 +260,13 @@ namespace AutopilotCore
             }
 
             float dt = Mathf.Clamp(TimeWarp.fixedDeltaTime, 0.01f, 0.05f);
+            if (!_active && _vref.Value <= 0f)
+            {
+                _status = "No Vref: set it by hand.";
+                Enabled = false;
+                return;
+            }
+
             Runway runway = Runway.Ksc[_runwayIndex];
             if (!_active || runway != _runway)
             {
@@ -264,7 +295,7 @@ namespace AutopilotCore
                     _vsCmd * Units.FpmPerMps, vessel.GetAeroIasKt(), _speedTarget, vessel.GetBank(),
                     vessel.GetSideslip() * Mathf.Rad2Deg, vessel.GetPitch(), _vertical.PitchCommand,
                     Mathf.Min(_ground.TailStrikePitch, 90f), ctrl.mainThrottle,
-                    ctrl.yaw, ctrl.wheelSteer, _brakes ? 1f : 0f);
+                    ctrl.yaw, ctrl.wheelSteer, _brakes ? 1f : 0f, _reversers.Progress);
             }
         }
 
@@ -275,7 +306,13 @@ namespace AutopilotCore
             GUILayout.Label("KSC runway", GUILayout.Width(110f));
             _runwayIndex = GUILayout.Toolbar(_runwayIndex, RunwayNames, GuiStyles.ToggleButton);
             GUILayout.EndHorizontal();
-            _vref.Draw("Vref (kt)");
+            if (_vref.Draw("Vref (kt)"))
+            {
+                _vrefEdited = true;
+            }
+
+            string calculated = float.IsNaN(_calculatedVrefKt) ? "unavailable, no lift found on the wings" : _calculatedVrefKt.ToString("F0") + " kt";
+            GUILayout.Label("Calculated Vref: " + calculated, GuiStyles.Caption);
             _patternFt.Draw("Pattern (ft)");
 
             if (!_active)
@@ -299,6 +336,32 @@ namespace AutopilotCore
             {
                 GUILayout.Label("G/S " + ((_height - _pathHeight) * Units.FeetPerMeter).ToString("+0;-0") + " ft   HGT " +
                                 (_height * Units.FeetPerMeter).ToString("F0") + " ft   SPD " + _speedTarget.ToString("F0") + " kt");
+            }
+        }
+
+        // Vref from the lift at the stall and at the touchdown attitude, which the tail clearance may hold
+        // well below the stall; with the gear up the tail limit is unknown until it comes down.
+        private void Estimate(Vessel vessel)
+        {
+            if (Time.fixedTime < _nextEstimate)
+            {
+                return;
+            }
+
+            _nextEstimate = Time.fixedTime + EstimateInterval;
+            _ground.Update(vessel);
+            _lift.Update(vessel, Mathf.Min(MaxFlarePitch, _ground.TailStrikePitch - TailStrikeMargin));
+            if (!_lift.Valid)
+            {
+                _calculatedVrefKt = float.NaN;
+                return;
+            }
+
+            _calculatedVrefKt = Mathf.Max(VrefStallFactor * _lift.StallKt, VrefTouchdownFactor * _lift.AttitudeKt);
+            float rounded = Mathf.Round(_calculatedVrefKt);
+            if (!_vrefEdited && _vref.Value != rounded)
+            {
+                _vref.Value = rounded;
             }
         }
 
@@ -514,6 +577,8 @@ namespace AutopilotCore
             _derotateTarget = vessel.GetPitch();
             _derotateHold = 0f;
             _noseDown = false;
+            _reverseDone = false;
+            _reversers.Update(vessel);
             _bank.Reset();
             _yaw.Release();
             _throttle.Reset();
@@ -716,7 +781,8 @@ namespace AutopilotCore
         {
             _groundTime += dt;
             _speedTarget = 0f;
-            _throttleOut = 0f;
+            float groundSpeed = (float)vessel.horizontalSrfSpeed;
+            _throttleOut = ReverseThrust(groundSpeed);
             ThrottleControl.Apply(vessel, ctrl, _throttleOut);
             ctrl.roll = 0f;
 
@@ -740,7 +806,6 @@ namespace AutopilotCore
             }
 
             _desiredTrack = _steering.Steer(vessel, ctrl, _runway.Course, _cross, dt);
-            float groundSpeed = (float)vessel.horizontalSrfSpeed;
             if (_groundTime < BrakeDelay)
             {
                 return;
@@ -754,9 +819,29 @@ namespace AutopilotCore
 
             if (groundSpeed < StoppedSpeed)
             {
+                _reversers.Command(false);
                 _status = "Stopped on KSC " + _runway.Name + ", brakes set.";
                 Enabled = false;
             }
+        }
+
+        // The reversers go out on touchdown, and reverse power comes only once they are fully out, so it
+        // never pushes forward. Below the cutoff the throttle stays at idle; they are stowed once stopped.
+        private float ReverseThrust(float groundSpeed)
+        {
+            if (!_reversers.Available || _reverseDone)
+            {
+                return 0f;
+            }
+
+            if (groundSpeed < ReverseCutoff)
+            {
+                _reverseDone = true;
+                return 0f;
+            }
+
+            _reversers.Command(true);
+            return _groundTime >= ReverseDelay && _reversers.Deployed ? ReverseThrottle : 0f;
         }
     }
 }
